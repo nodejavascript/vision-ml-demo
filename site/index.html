@@ -6,7 +6,7 @@
     <title>vision-ml-demo.nodejavascript.com</title>
     <meta
       name="description"
-      content="Drop in one picture or a folderful. It learns what you list, one picture at a time, and says what it can see."
+      content="Drop in one picture or a folderful. It learns the things you name in each one, and says what it can see."
     />
     <meta name="theme-color" content="#08050d" />
     <meta name="color-scheme" content="dark" />
@@ -42,9 +42,10 @@
     <main>
       <h1>Teach it what it sees</h1>
       <p class="intro">
-        <b>Drag in as many pictures as you like</b> — it goes through them one at a time. For each one, list
-        <b>everything you can see, separated by commas</b>: a dog, a beach, the sky. It remembers all of it, so one
-        picture can teach several things at once, and the next picture it sees it says what it can see.
+        <b>Drag in as many pictures as you like</b> — it goes through them one at a time. For each one, name
+        <b>the things you can see</b>, separated by commas: <b>dog, cat, sky, beach, rail house</b>. Nouns, not
+        sentences — no "there is a". It remembers every one of them, so a single picture can teach several things at
+        once, and the next picture it sees it says what it can see in it.
       </p>
 
       <!-- One thing at a time: the picture, what it says, and your answer. -->
@@ -70,9 +71,9 @@
           <p class="sub" id="sub">Show me a picture and list everything you can see in it, and I'll start learning.</p>
 
           <div class="tell" id="tell" hidden>
-            <label class="tell-label" for="list">What can you see in it? List everything, separated by commas.</label>
+            <label class="tell-label" for="list">What can you see in it? Just the things themselves — nouns, separated by commas:</label>
             <div class="tell-row">
-              <input type="text" id="list" placeholder="a dog, sand, the sea, sky" autocomplete="off" />
+              <input type="text" id="list" placeholder="dog, cat, sky, beach, rail house" autocomplete="off" />
               <button class="btn primary" id="tellBtn" type="button">Tell it</button>
             </div>
           </div>

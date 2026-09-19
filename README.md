@@ -57,6 +57,32 @@ Underneath, that is a different network: a separate yes/no for each thing it kno
 Measured on the 90 drawn shapes / 11 names: loss **0.85 → 0.13**, **85%** on
 pictures held back from training, **72–100%** per name.
 
+## Nouns only
+
+A name is what the model can use. A class called *"this is a photo of my cat"* is not
+a thing, it is a sentence, and it would sit in the vocabulary forever getting in the
+way of everything else. So the page asks for **nouns, separated by commas** —
+`dog, cat, sky, beach, rail house` — and `parseLabels()` does three things about it:
+
+1. **Split** on commas, semicolons and new lines, and on the words *and* / *or* —
+   "a dog and a beach" is two things, not one long one.
+2. **Strip framing words off the front**, but only when the piece starts with a word
+   that could not begin a name — *a, the, my, this, i, there, some…* So
+   "this is a photo of my cat" becomes **cat**, and "the sky" becomes **sky**.
+3. **Leave everything else exactly as typed.**
+
+**The front is the only safe place to cut.** A word removed from the middle destroys
+a name — *cup of tea*, *rail house*, *fish and chips* — so nothing is ever taken from
+the middle or the end, and cleaning only starts at all if the first word could not
+begin a name. That is why **photo frame** and **can opener** come through untouched:
+they do not start with one.
+
+There is **no dictionary** here and this does not pretend to be one. It cannot know
+that *sitting* is not a thing, so "a cat sitting on a wall" comes out as
+**cat sitting on a wall**. It stops at the first real word rather than guessing where
+the noun ends — and the page echoes back every name it stored, so a bad one is visible
+immediately rather than buried in the vocabulary.
+
 No pictures handy? **It will practise on that same set** — 90 drawn shapes, each a
 shape in a colour, so every one of them is a two-label picture. The offer is a
 small link in the corner of the stage, and it only appears while you have nothing

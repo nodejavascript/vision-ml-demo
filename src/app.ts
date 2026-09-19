@@ -61,23 +61,71 @@ function startsWith(prefix: string[], full: string[]): boolean {
 }
 
 /**
- * What the person typed, as a list.
+ * Words that cannot begin a name.
  *
- * The page asks for commas, but semicolons and newlines are accepted too, because
- * people type what they type. A leading "a" or "the" is dropped: "a bear" and
- * "bear" are the same thing, and two spellings of one thing would become two
- * classes that each end up with half the pictures.
+ * A picture is named by the things in it — dog, sea, beach, rail house — so "the
+ * dog" and "my dog" are both just dog. If a label starts with one of these it is
+ * not a name at all, it is the start of a sentence, and that is the signal used
+ * below to decide whether to clean it up.
+ */
+const OPENS_A_SENTENCE = new Set([
+  'a', 'an', 'the', 'this', 'that', 'these', 'those', 'some',
+  'my', 'our', 'your', 'his', 'her', 'their', 'its',
+  'i', 'we', 'you', 'it', 'there', 'they', 'he', 'she',
+]);
+
+/** Once a label is known to be a sentence, these come off the front of it too. */
+const FRAMING = new Set([
+  ...OPENS_A_SENTENCE,
+  'is', 'are', 'was', 'were', 'am', 'be', 'been', 'being', 'will', 'would', 'can', 'could',
+  'see', 'sees', 'saw', 'seen', 'look', 'looks', 'looking', 'like',
+  'photo', 'photos', 'picture', 'pictures', 'image', 'images', 'shot',
+  'of', 'in', 'on', 'at', 'with', 'and', 'or', 'to', 'very', 'just', 'really', 'only',
+]);
+
+/** How to answer, said the same way everywhere so it only has to be learned once. */
+const HOW_TO_LIST = 'Name the things you can see — nouns only, separated by commas.';
+
+/**
+ * What the person typed, as a list of things.
+ *
+ * They are asked for nouns, because a name is what the model can use: a class called
+ * "this is a photo of my cat" is not a thing, it is a sentence, and it would sit in
+ * the vocabulary forever getting in the way of everything else. Three things are
+ * done about that, and only these three:
+ *
+ *   1. Split on the separators people actually type — commas, semicolons, new
+ *      lines — and on the words "and" and "or", because "a dog and a beach" is two
+ *      things rather than one long one.
+ *   2. Strip framing words **off the front** of a piece, turning the sentence above
+ *      into "cat".
+ *   3. Leave everything else exactly as typed.
+ *
+ * The front is the only safe place to cut. A word removed from the middle destroys a
+ * name — "cup of tea", "rail house", "fish and chips" — so nothing is ever removed
+ * from the middle or the end, and cleaning only starts at all when the first word is
+ * one that could not begin a name. "photo frame" and "can opener" therefore come
+ * through untouched, because they do not start with one.
+ *
+ * There is no dictionary here and this does not pretend to be one: it cannot know
+ * that "sitting" is not a thing. What it can do is stop at the first real word, and
+ * never invent a meaning by cutting into one.
  */
 function parseLabels(text: string): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
-  for (const piece of text.split(/[,;\n]/)) {
-    const name = piece
-      .trim()
-      .toLowerCase()
-      .replace(/^(a|an|the)\s+/, '')
-      .replace(/[.!?]+$/, '')
-      .trim();
+  for (const piece of text.toLowerCase().split(/[,;\n]+|\band\b|\bor\b/)) {
+    const words = piece
+      .replace(/[.!?]+/g, ' ')
+      .split(/\s+/)
+      .filter((word) => word !== '');
+
+    let start = 0;
+    if (words.length > 0 && OPENS_A_SENTENCE.has(words[0])) {
+      while (start < words.length && FRAMING.has(words[start])) start += 1;
+    }
+
+    const name = words.slice(start).join(' ');
     if (name === '' || seen.has(name)) continue;
     seen.add(name);
     out.push(name);
@@ -359,7 +407,7 @@ function render(): void {
     el.sub.textContent =
       names.length < 2
         ? `I ${named.length === 0 ? "don't know anything yet" : `only know ${listWords(names)} so far`}. ` +
-          'Show me one and list everything you can see in it. I need at least two different things before I can tell them apart.'
+          `Show me one and ${HOW_TO_LIST} I need at least two different things before I can tell them apart.`
         : `I know ${names.length} things — ${listWords(names)} — from ${named.length} ${plural(named.length, 'picture', 'pictures')}. ` +
           'Show me a picture and I will say what I can see in it.';
     el.answers.append(but('Choose a picture', 'primary', () => choosePicture()));
@@ -405,7 +453,7 @@ function render(): void {
 
   if (state.sees.length > 0) {
     say('I can see ', listWords(state.sees.map((s) => s.name)), '.');
-    el.sub.textContent = `${noted}${where}List everything you can see in it, separated by commas — I will remember all of it.`;
+    el.sub.textContent = `${noted}${where}${HOW_TO_LIST} I will remember all of it.`;
     el.answers.append(but('Yes — that is what I see', '', () => void answer(state.sees.map((s) => s.name))));
   } else if (state.best) {
     // Naming the strongest answer even when it is unsure is not a hedge: the
@@ -413,13 +461,13 @@ function render(): void {
     // nothing about which way it leans.
     const percent = Math.round(state.best.sure * 100);
     say('I am not sure yet — my best guess is ', state.best.name, `, and I am only ${percent}% on that.`);
-    el.sub.textContent = `${noted}${where}List everything you can see in it, separated by commas. That is what I learn from.`;
+    el.sub.textContent = `${noted}${where}${HOW_TO_LIST}`;
   } else {
     say('I do not know what is in this picture yet.');
     el.sub.textContent =
       names.length < 2
-        ? `${noted}${where}List everything you can see, and show me a second kind of picture too — two things is the least I can tell apart.`
-        : `${noted}${where}List everything you can see in it, separated by commas.`;
+        ? `${noted}${where}${HOW_TO_LIST} Show me a second kind of picture too — two things is the least I can tell apart.`
+        : `${noted}${where}${HOW_TO_LIST}`;
   }
 
   el.tell.hidden = false;
@@ -619,7 +667,7 @@ async function answer(labels: string[]): Promise<void> {
   const sample = state.current;
   if (!sample) return;
   if (labels.length === 0) {
-    toast('List at least one thing you can see in it.');
+    toast('Name at least one thing you can see in it — just the thing itself.');
     el.list.focus();
     return;
   }
