@@ -6,7 +6,7 @@
     <title>vision-ml-demo.nodejavascript.com</title>
     <meta
       name="description"
-      content="Show it one picture at a time and list everything you can see in it. It learns what you list and says what it can see."
+      content="Drop in one picture or a folderful. It learns what you list, one picture at a time, and says what it can see."
     />
     <meta name="theme-color" content="#08050d" />
     <meta name="color-scheme" content="dark" />
@@ -42,9 +42,9 @@
     <main>
       <h1>Teach it what it sees</h1>
       <p class="intro">
-        Show it one picture, then <b>list everything you can see in it, separated by commas</b> — a dog, a beach, the
-        sky. It remembers all of it, so one picture can teach several things at once, and the next picture it sees it
-        says what it can see.
+        <b>Drag in as many pictures as you like</b> — it goes through them one at a time. For each one, list
+        <b>everything you can see, separated by commas</b>: a dog, a beach, the sky. It remembers all of it, so one
+        picture can teach several things at once, and the next picture it sees it says what it can see.
       </p>
 
       <!-- One thing at a time: the picture, what it says, and your answer. -->
@@ -59,12 +59,13 @@
                 <path d="M8 34l10-10 8 8 6-5 8 7" />
               </g>
             </svg>
-            <p><b>Drag a picture here</b></p>
-            <p class="small">or <span class="linkish">choose one</span></p>
+            <p><b>Drag pictures here</b></p>
+            <p class="small">as many as you like — or <span class="linkish">choose some</span></p>
           </div>
         </div>
 
         <div class="talk">
+          <p class="queue" id="queue" hidden></p>
           <p class="says" id="says">I don't know anything yet.</p>
           <p class="sub" id="sub">Show me a picture and list everything you can see in it, and I'll start learning.</p>
 
@@ -79,6 +80,10 @@
           <div class="answers" id="answers"></div>
           <div class="row" id="controls"></div>
         </div>
+
+        <!-- The way out of an empty page, kept in the corner: somebody who has
+             pictures should not be nudged towards playing with shapes instead. -->
+        <p class="aside" id="aside" hidden></p>
       </section>
 
       <p class="progress" id="progress"></p>

@@ -12,6 +12,9 @@ npm install
 npm run dev        # tsc, then serve on http://127.0.0.1:4330/
 ```
 
+Running now as the `vision-ml-demo` systemd user service (same port, restart on
+failure): `systemctl --user status vision-ml-demo`.
+
 ## The two versions
 
 | Branch | What it is |
@@ -23,23 +26,47 @@ Both share the same engine (`src/net.ts` and friends). Only the page differs.
 
 ## What it does
 
-1. **Show it a picture.** It guesses what the picture is.
-2. **Tell it what the picture is.** Tap a name it already knows, or type a new one.
+1. **Hand it pictures — as many as you like.** Drop a batch, or choose several. It
+   puts them in a queue and goes through them **one at a time**, saying where you
+   are: *picture 3 of 12, 9 still to name*.
+2. **For each one, list everything you can see, separated by commas.** *a dog, sand,
+   the sea, sky.* See [why a list](#why-a-list).
 3. **It studies, in the background, and remembers.**
+
+The run keeps its rhythm: naming a picture goes straight on to the next one, and
+what you wrote rides along on the next picture's line. *Skip this one* sets a
+picture aside without teaching it — the honest thing to do with a picture you cannot
+describe. A second batch dropped mid-run queues up behind what is already waiting.
 
 That is the whole page. There is no Train button, because the person this is for
 should not have to know what a learning rate is to teach it something. The numbers
 still exist, behind the *More detail* door.
 
-No pictures handy? **It will practise on 90 drawn shapes** — circles, squares and
-triangles in random colours and positions — so the loop can be tried without
-hunting for photographs first.
+## Why a list
+
+Asking for a list rather than a single name is what makes one picture worth several.
+A photograph of a dog on a beach teaches **dog** *and* **beach**, and the same
+picture is reused by both answers — so twenty photographs go much further than they
+would if each one had to pick a winner. It is also how real image collections are
+labelled.
+
+Underneath, that is a different network: a separate yes/no for each thing it knows
+(`sigmoid` + binary cross-entropy) instead of one choice out of all of them
+(`softmax`). It is why the page can answer with more than one thing at a time.
+
+Measured on the 90 drawn shapes / 11 names: loss **0.85 → 0.13**, **85%** on
+pictures held back from training, **72–100%** per name.
+
+No pictures handy? **It will practise on that same set** — 90 drawn shapes, each a
+shape in a colour, so every one of them is a two-label picture. The offer is a
+small link in the corner of the stage, and it only appears while you have nothing
+named of your own.
 
 ## The model
 
-`src/net.ts` is the whole thing: convolutions, pooling, dense layers, softmax,
-backpropagation and Adam, as plain loops over typed arrays. No framework, no matrix
-library, no runtime dependencies.
+`src/net.ts` is the whole thing: convolutions, pooling, dense layers, sigmoid,
+binary cross-entropy, backpropagation and Adam, as plain loops over typed arrays. No
+framework, no matrix library, no runtime dependencies.
 
 ```
 3x48x48 → conv 3x3 x8 → relu → pool → conv 3x3 x16 → relu → pool → 2304 → 32 → names

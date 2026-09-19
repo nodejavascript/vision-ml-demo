@@ -111,6 +111,23 @@ const state = {
    * guess, never as an answer.
    */
   best: null as { name: string; sure: number } | null,
+  /**
+   * Pictures handed over together and still to be named, in order.
+   *
+   * Held as files rather than decoded pictures on purpose: fifty photographs
+   * decoded up front would sit in memory as fifty bitmaps for no reason.
+   */
+  pending: [] as File[],
+  /** How many pictures of this run have been finished — named, or skipped. */
+  runDone: 0,
+  /**
+   * What the person listed for the picture just finished.
+   *
+   * Carried onto the next picture's line so a run reads as one continuous
+   * conversation. Without it, naming a picture and being shown the next one looks
+   * like the answer was thrown away.
+   */
+  lastNoted: [] as string[],
   stage: 'start' as Stage,
   approved: null as ModelFile | null,
   sure: 0.5,
@@ -132,11 +149,13 @@ const el = {
   picEmpty: element<HTMLDivElement>('picEmpty'),
   says: element<HTMLElement>('says'),
   sub: element<HTMLElement>('sub'),
+  queue: element<HTMLElement>('queue'),
   tell: element<HTMLDivElement>('tell'),
   list: element<HTMLInputElement>('list'),
   tellBtn: element<HTMLButtonElement>('tellBtn'),
   answers: element<HTMLDivElement>('answers'),
   controls: element<HTMLDivElement>('controls'),
+  aside: element<HTMLElement>('aside'),
   progress: element<HTMLElement>('progress'),
   studying: element<HTMLElement>('studying'),
   confusedChart: element<HTMLCanvasElement>('confusedChart'),
@@ -155,6 +174,35 @@ const el = {
   forgetBtn: element<HTMLButtonElement>('forgetBtn'),
   toast: element<HTMLDivElement>('toast'),
 };
+
+/* ------------------------------------------------------------------ *
+ * The run — pictures handed over together
+ * ------------------------------------------------------------------ */
+
+/**
+ * How many pictures this run holds, counted from what is actually here rather than
+ * kept in a counter of its own.
+ *
+ * A stored total can drift from reality — a picture skipped, a second drop arriving
+ * mid-run, a queue emptied — and a page that says "4 of 12" about a queue of nine is
+ * worse than one that says nothing. Deriving it from the three things that exist
+ * makes that impossible.
+ */
+function runTotal(): number {
+  const onStage = state.stage === 'asking' && state.current ? 1 : 0;
+  return state.runDone + onStage + state.pending.length;
+}
+
+/** Which picture of the run is on the stage, counting from one. */
+function runPosition(): number {
+  const onStage = state.stage === 'asking' && state.current ? 1 : 0;
+  return state.runDone + onStage;
+}
+
+/** More than one picture: the only time the position is worth saying. */
+function hasRun(): boolean {
+  return runTotal() > 1;
+}
 
 /* ------------------------------------------------------------------ *
  * The worker, with a main-thread fallback
@@ -205,6 +253,22 @@ function but(text: string, kind: '' | 'primary' | 'ghost' | 'danger', onClick: (
   const button = document.createElement('button');
   button.type = 'button';
   button.className = `btn${kind ? ` ${kind}` : ''}`;
+  button.textContent = text;
+  button.addEventListener('click', onClick);
+  return button;
+}
+
+/**
+ * A control that reads as a link.
+ *
+ * A button rather than an anchor, because it does something rather than going
+ * somewhere — but it is styled down to the weight of a link, so the quiet way out
+ * of a panel does not compete with the thing the panel is asking for.
+ */
+function link(text: string, onClick: () => void): HTMLButtonElement {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'link';
   button.textContent = text;
   button.addEventListener('click', onClick);
   return button;
@@ -278,6 +342,7 @@ function render(): void {
   // Drawn first and unconditionally: it read as a stale line whenever one of the
   // branches below returned early without refreshing it.
   renderProgress();
+  renderQueue();
 
   el.picture.hidden = state.current === null;
   el.picEmpty.hidden = state.current !== null;
@@ -285,6 +350,8 @@ function render(): void {
 
   el.answers.textContent = '';
   el.controls.textContent = '';
+  el.aside.textContent = '';
+  el.aside.hidden = true;
   el.tell.hidden = true;
 
   if (state.stage === 'start') {
@@ -296,8 +363,13 @@ function render(): void {
         : `I know ${names.length} things — ${listWords(names)} — from ${named.length} ${plural(named.length, 'picture', 'pictures')}. ` +
           'Show me a picture and I will say what I can see in it.';
     el.answers.append(but('Choose a picture', 'primary', () => choosePicture()));
+    // Only while there is nothing to work with: the offer is a way out of an empty
+    // page, not something to reach for once you have pictures of your own.
     if (named.length === 0) {
-      el.controls.append(but('No pictures handy? Let it practise on 90 drawn shapes', 'ghost', () => void practise()));
+      el.aside.append('No pictures handy? ');
+      el.aside.append(link('practise', () => void practise()));
+      el.aside.append(' on 90 drawn shapes.');
+      el.aside.hidden = false;
     }
     return;
   }
@@ -305,20 +377,35 @@ function render(): void {
   if (state.stage === 'ready') {
     const said = state.current?.labels ?? [];
     say('Thanks — I will remember that.');
-    el.sub.textContent =
-      said.length > 0
-        ? `I have noted ${listWords(said)}. I now know ${names.length} ${plural(names.length, 'thing', 'things')} ` +
-          `from ${named.length} ${plural(named.length, 'picture', 'pictures')}. Show me another — drag one onto the ` +
-          'box, or press the button.'
-        : 'Show me another picture.';
-    el.answers.append(but('Show me another picture', 'primary', () => another()));
+    if (hasRun()) {
+      // The whole run is finished, so say so: twelve pictures is a sitting, not a
+      // single answer, and the person should see the end of it. The counts differ
+      // when something was skipped, which is why both are given.
+      el.sub.textContent =
+        `That was the last of the ${runTotal()}. You now have ${named.length} ` +
+        `${plural(named.length, 'picture', 'pictures')} and I know ${names.length} ` +
+        `${plural(names.length, 'thing', 'things')}. Drop in another batch whenever you like.`;
+    } else {
+      el.sub.textContent =
+        said.length > 0
+          ? `I have noted ${listWords(said)}. I now know ${names.length} ${plural(names.length, 'thing', 'things')} ` +
+            `from ${named.length} ${plural(named.length, 'picture', 'pictures')}. Show me another — drag one onto the ` +
+            'box, or press the button.'
+          : 'Show me another picture.';
+    }
+    el.answers.append(but('Show me a picture', 'primary', () => another()));
     return;
   }
 
   // stage === 'asking'
+  // What was just named rides on this line, and so does where you are in the run,
+  // so naming picture after picture reads as one continuous thing.
+  const noted = state.lastNoted.length > 0 ? `Noted ${listWords(state.lastNoted)}. ` : '';
+  const where = hasRun() ? `Picture ${runPosition()} of ${runTotal()}. ` : '';
+
   if (state.sees.length > 0) {
     say('I can see ', listWords(state.sees.map((s) => s.name)), '.');
-    el.sub.textContent = 'List everything you can see in it, separated by commas — I will remember all of it.';
+    el.sub.textContent = `${noted}${where}List everything you can see in it, separated by commas — I will remember all of it.`;
     el.answers.append(but('Yes — that is what I see', '', () => void answer(state.sees.map((s) => s.name))));
   } else if (state.best) {
     // Naming the strongest answer even when it is unsure is not a hedge: the
@@ -326,18 +413,45 @@ function render(): void {
     // nothing about which way it leans.
     const percent = Math.round(state.best.sure * 100);
     say('I am not sure yet — my best guess is ', state.best.name, `, and I am only ${percent}% on that.`);
-    el.sub.textContent = 'List everything you can see in it, separated by commas. That is what I learn from.';
+    el.sub.textContent = `${noted}${where}List everything you can see in it, separated by commas. That is what I learn from.`;
   } else {
     say('I do not know what is in this picture yet.');
     el.sub.textContent =
       names.length < 2
-        ? 'List everything you can see, and show me a second kind of picture too — two things is the least I can tell apart.'
-        : 'List everything you can see in it, separated by commas.';
+        ? `${noted}${where}List everything you can see, and show me a second kind of picture too — two things is the least I can tell apart.`
+        : `${noted}${where}List everything you can see in it, separated by commas.`;
   }
 
   el.tell.hidden = false;
   el.list.value = '';
-  el.controls.append(but('Show me a different picture', 'ghost', () => another()));
+  // The button says how many are behind this one, because that is the thing you want
+  // to know before deciding whether to bother with a hard picture.
+  el.controls.append(
+    but(
+      state.pending.length > 0
+        ? `Skip this one (${state.pending.length} ${plural(state.pending.length, 'picture', 'pictures')} to go)`
+        : 'Show me a different picture',
+      'ghost',
+      () => skip(),
+    ),
+  );
+}
+
+/** Where the run has got to, said plainly, and only while a picture is on the stage. */
+function renderQueue(): void {
+  // Hidden outside the asking stage as well as outside a run: once a batch is
+  // finished the count is the previous run's, and leaving "5 of 5" on a page that
+  // has moved on reads as a stuck number.
+  if (state.stage !== 'asking' || !hasRun()) {
+    el.queue.hidden = true;
+    return;
+  }
+  el.queue.hidden = false;
+  el.queue.textContent =
+    `Picture ${runPosition()} of ${runTotal()}` +
+    (state.pending.length > 0
+      ? ` · ${state.pending.length} still to name`
+      : ' · last one');
 }
 
 function renderProgress(): void {
@@ -364,20 +478,115 @@ function renderProgress(): void {
 const filePicker = document.createElement('input');
 filePicker.type = 'file';
 filePicker.accept = 'image/*';
+// Several at once, because gathering twenty pictures and handing them over one at a
+// time is the tedious part of teaching something like this.
+filePicker.multiple = true;
+// In the document rather than detached: an input that is not attached behaves
+// inconsistently about opening, and being hidden is what keeps it off the page.
+filePicker.hidden = true;
+document.body.appendChild(filePicker);
 filePicker.addEventListener('change', () => {
-  const file = filePicker.files?.[0];
+  const files = Array.from(filePicker.files ?? []);
   filePicker.value = '';
-  if (file) void showPicture(file);
+  if (files.length > 0) enqueue(files);
 });
 
 function choosePicture(): void {
   filePicker.click();
 }
 
+/**
+ * Hand over pictures: the first one onto the stage, the rest queued behind it.
+ *
+ * Files are not decoded here. Each one is decoded when it reaches the stage, so a
+ * batch of fifty costs one bitmap at a time.
+ */
+function enqueue(files: File[]): void {
+  const pictures = files.filter((file) => file.type.startsWith('image/'));
+  if (pictures.length === 0) {
+    toast('None of those were pictures.');
+    return;
+  }
+  if (pictures.length < files.length) {
+    const missed = files.length - pictures.length;
+    toast(
+      missed === 1
+        ? 'One file was not a picture, so it was left out.'
+        : `${missed} files were not pictures, so they were left out.`,
+    );
+  }
+
+  if (state.stage === 'ready') {
+    // Whatever is on the stage has already been named, so it is not part of what
+    // comes next and must not be counted as one of them.
+    state.current = null;
+    state.runDone = 0;
+    state.lastNoted = [];
+  }
+
+  state.pending.push(...pictures);
+  if (state.current === null) next();
+  else render();
+}
+
+/**
+ * The next picture in the queue, or the end of the run.
+ *
+ * Every way out of a picture arrives here — named it, or skipped it — so the count
+ * on the page and the picture on the stage cannot disagree.
+ */
+function next(): void {
+  const file = state.pending.shift();
+  if (file) {
+    void showPicture(file);
+    return;
+  }
+  // The queue is empty. That is either the end of a run of several, or the end of a
+  // single picture handed over on its own — and the two want different pages.
+  const total = runTotal();
+  state.pending = [];
+  state.runDone = 0;
+  state.stage = total > 1 ? 'ready' : 'start';
+  render();
+  if (total <= 1) choosePicture();
+}
+
+/**
+ * Set the picture aside without naming it. It teaches nothing — which is the honest
+ * thing to do with a picture you cannot describe, rather than guessing at it.
+ */
+function skip(): void {
+  if (state.current === null) return;
+  if (hasRun()) state.runDone += 1;
+  state.current = null;
+  state.sees = [];
+  state.best = null;
+  state.lastNoted = [];
+
+  if (state.pending.length > 0) {
+    next();
+    return;
+  }
+  state.runDone = 0;
+  state.stage = 'start';
+  render();
+  choosePicture();
+}
+
+/**
+ * Start again from the picker.
+ *
+ * Used by the "Show me a picture" button once a run is finished, so it clears the
+ * run with it — otherwise the next single picture would be counted as picture two
+ * of a batch that had already ended.
+ */
 function another(): void {
   state.current = null;
   state.sees = [];
   state.best = null;
+  state.pending = [];
+  state.runDone = 0;
+  state.lastNoted = [];
   state.stage = 'start';
   render();
   choosePicture();
@@ -420,10 +629,19 @@ async function answer(labels: string[]): Promise<void> {
   if (!state.samples.includes(sample)) state.samples.push(sample);
   await store.putSample(sample);
 
+  if (hasRun()) state.runDone += 1;
+  state.lastNoted = labels;
   state.sees = [];
   state.best = null;
-  state.stage = 'ready';
-  render();
+
+  if (state.pending.length > 0) {
+    // Straight on to the next one. The acknowledgement is carried onto its line, so
+    // a run of twenty reads as twenty answers rather than twenty confirmations.
+    next();
+  } else {
+    state.stage = 'ready';
+    render();
+  }
   study();
 }
 
@@ -821,17 +1039,14 @@ async function boot(): Promise<void> {
     event.preventDefault();
 
     const files = Array.from(event.dataTransfer?.files ?? []);
-    const picture = files.find((f) => f.type.startsWith('image/'));
-    if (!picture) {
+    if (files.length === 0) {
       toast('That was not a picture.');
       return;
     }
-    // One at a time is the whole point of the page, so anything extra is left alone
-    // rather than queued up behind the person's back — but it is said out loud,
-    // because a drop that silently ignores a file looks like a failure.
-    if (files.length > 1) toast(`One picture at a time — I used ${picture.name}.`);
+    // However many arrive, they all go in. Dropping twelve photographs and being
+    // shown one is the behaviour this replaces.
     el.stage.scrollIntoView({ block: 'nearest' });
-    void showPicture(picture);
+    enqueue(files);
   });
 
   window.addEventListener('resize', () => renderCharts());
