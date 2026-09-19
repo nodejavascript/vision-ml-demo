@@ -39,9 +39,8 @@ Both share the same engine (`src/net.ts` and friends). Only the page differs.
    skipped, the one being asked, and the ones still to come.
 5. **It studies, in the background, and remembers.**
 
-The run keeps its rhythm: naming a face goes straight on to the next one, and what
-you wrote rides along on the next question's line. A second batch dropped mid-run
-queues up behind what is already waiting.
+The run keeps its rhythm: naming a face goes straight on to the next one. A second batch
+dropped mid-run queues up behind what is already waiting.
 
 **A box around something you do not want to name can be skipped**, and the box shows
 that it was — dimmed, with its number struck through. Skipping is deliberately *not*
@@ -54,6 +53,17 @@ There are two ways out, and both are links sitting under the thing they act on:
 image** beneath the picture, for a photograph that turns out to hold nothing you want to
 name. The second is the answer to eight boxes found and none of them wanted.
 
+**A name typed wrong is taken back, not lived with.** *Undo the last name* sits in the row
+under the line above, and puts the run back exactly as it stood while that box was being
+asked about: the same picture, the same box, and the name in the box with it selected — so
+correcting a misspelling is a retype rather than a hunt back through the queue for the
+photograph it was on. If the wrong name had already started a study run, that run is stopped
+and the studying starts again from the names that are actually there. It holds **one** name
+and not a history, because undoing anything older would have to unwind whatever came after
+it — and it is dropped the moment anything else touches the run: a skip, a box added or
+removed, another batch dropped in. A page that silently reverses two answers when one is
+asked for is worse than a page with no undo at all.
+
 **There is no instruction note.** Three sentences used to sit beside the thumbnail the
 whole time a picture was up — *press a box to pick it, × to remove it, or drag across a
 face to add one it missed* — for a gesture most people never need, on a page that is
@@ -65,13 +75,14 @@ That is the whole page. There is no Train button, because the person this is for
 should not have to know what a learning rate is to teach it something. The numbers
 still exist, behind the *More detail* door.
 
-**Two lines, two jobs, and never the same sentence twice.** The bold line is the model's
-own voice and says *why it cannot answer* — *I have not been taught anything yet*, or
-*I know only sarah so far — one thing is not enough to tell two pictures apart*. The line
-under it is the page's and says *what to do* — *name this one and I can start learning*.
-These were once both explaining the same thing at once, and *name a second one* was being
-said on the opening picture, before any first one existed. If a line needs the reason the
-model cannot answer, it goes in the first; if it needs an action, the second.
+**One line, and only while it has something to say.** That line used to open with *Noted
+sarah.* and close with *I will remember every one of them.* — the first repeats what the box
+on the picture and the chart under it already show, and the second is not an instruction.
+George, 2026-09-19: *"dont put Noted ngle. I will remember every one of them. langaurge."*
+What is left says one thing and stops: *Name this one and I can start learning*, then *Name
+a second one and I can start telling them apart*, and after that **no line at all**. How
+many pictures are actually named decides which — derived from what is there rather than from
+a counter, so a skip or a second drop cannot leave it saying something untrue.
 
 **The question is at the top of the column, and the guess is the first thing under it.**
 The order used to be the model's line, then what to do, then the box to type in — so the one
@@ -80,16 +91,22 @@ reads downwards: where you are, the question, *My guess:* with a button per thin
 see, then what to do next. The buttons are labelled with the names themselves, so agreeing
 with the model is one press and disagreeing is the box directly above it.
 
-**A guess, or nothing — never a name it has no reason to give.** Everything it offers has
-cleared the confidence line, which is the number behind the *More detail* door and is yours
-to move. Under that line there is nothing: the page says **I'm not sure yet** and offers no
-buttons at all. It used to name its strongest answer anyway — *I am not sure yet — my best
+**A guess, or nothing — and nothing means the line is not there at all.** Everything it
+offers has cleared the confidence line, which is the number behind the *More detail* door
+and is yours to move. Under that line there is nothing: **the line is not drawn** and no
+buttons with it. It used to name its strongest answer anyway — *I am not sure yet — my best
 guess is sarah, and I am only 34% on that* — on the reasoning that "I do not know" tells you
-nothing about which way it leans. George, 2026-09-19: *"is the confidense is lot, say im not
-sure yet. thats it. dont make dumb guesses."* So the value that produced that sentence is
-gone from the code rather than hidden in it: there is no strongest-answer reading anywhere
-in the page any more. A name under the line is one the model has no reason to give, and a
-button on it invites somebody to accept it without looking.
+nothing about which way it leans; then it said *I'm not sure yet* on its own. George,
+2026-09-19: *"if it doesnt know, i dont want to see my guess."* So there is no guess line
+when there is no guess, and the value that produced the old sentence is gone from the code
+rather than hidden in it — there is no strongest-answer reading anywhere in the page any
+more. A name under the line is one the model has no reason to give, and a button on it
+invites somebody to accept it without looking.
+
+**The guess is a label, not a sentence.** *My guess:* over its buttons is the head of the
+answer, so it is set at the same size as the question it answers — not in the model's own
+voice, which is the larger type on the opening and closing lines — and it carries a little
+more air above it, so the box you type in and the guesses under it do not read as one block.
 
 ## Where the faces come from
 

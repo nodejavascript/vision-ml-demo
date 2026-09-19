@@ -171,13 +171,10 @@ const state = {
     /** A box being dragged out by hand, before it is let go of. */
     draft: null,
     /**
-     * What the person listed for the picture just finished.
-     *
-     * Carried onto the next picture's line so a run reads as one continuous
-     * conversation. Without it, naming a picture and being shown the next one looks
-     * like the answer was thrown away.
+     * The name just given, and the run it was given in, so a spelling mistake can be
+     * taken back. Only ever the most recent one — see `LastAnswer` for why.
      */
-    lastNoted: [],
+    lastAnswer: null,
     stage: 'start',
     approved: null,
     sure: 0.5,
@@ -266,24 +263,45 @@ function currentBox() {
 function waitingPhotos() {
     return state.turns.length + state.files.length;
 }
+/** The run, copied, so that it can be put back. See `RunSnapshot`. */
+function snapshotRun() {
+    return {
+        turn: state.turn,
+        turnIndex: state.turnIndex,
+        namedBoxes: state.namedBoxes.slice(),
+        skippedBoxes: state.skippedBoxes.slice(),
+        photosDone: state.photosDone,
+        finishedTotal: state.finishedTotal,
+        turns: state.turns.slice(),
+        files: state.files.slice(),
+        sees: state.sees.slice(),
+        current: state.current,
+        stage: state.stage,
+    };
+}
+/** Put the run back exactly as the snapshot found it. */
+function restoreRun(before) {
+    state.turn = before.turn;
+    state.turnIndex = before.turnIndex;
+    state.namedBoxes = before.namedBoxes.slice();
+    state.skippedBoxes = before.skippedBoxes.slice();
+    state.photosDone = before.photosDone;
+    state.finishedTotal = before.finishedTotal;
+    state.turns = before.turns.slice();
+    state.files = before.files.slice();
+    state.sees = before.sees.slice();
+    state.current = before.current;
+    state.stage = before.stage;
+}
 /**
- * Why it has nothing to say about this picture.
+ * Drop the way back.
  *
- * The reason is always its own state, never the picture — and saying which state is
- * the whole point. A flat "I do not know what is in this picture yet" was true, but
- * it read as though every picture had been considered and turned down, which is
- * exactly what a stuck page looks like. Three separate sentences, and the third one
- * resolves on its own because finishing a study run re-reads whatever is on the
- * stage.
+ * Called by everything that changes the run after an answer. The snapshot describes one
+ * moment, and once the queue, the boxes or the pictures have moved, restoring it would
+ * take back work the person did not ask to take back.
  */
-function cannotReadYet(names, named) {
-    if (named === 0) {
-        return 'I have not been taught anything yet.';
-    }
-    if (names.length < 2) {
-        return `I know only ${listWords(names)} so far — one thing is not enough to tell two pictures apart.`;
-    }
-    return 'I am still learning — I will have something to say in a moment.';
+function forgetUndo() {
+    state.lastAnswer = null;
 }
 /* ------------------------------------------------------------------ *
  * The worker, with a main-thread fallback
@@ -401,6 +419,14 @@ function look(sample) {
 /* ------------------------------------------------------------------ *
  * The stage
  * ------------------------------------------------------------------ */
+/**
+ * The question the name box was last emptied for.
+ *
+ * The box is emptied when the question changes, and not on every redraw: a study run
+ * finishing redraws this column on its own, and emptying the box then deletes half a name
+ * somebody is in the middle of typing.
+ */
+let clearedFor = null;
 function render() {
     const named = namedSamples();
     const names = knownNames();
@@ -418,6 +444,9 @@ function render() {
     el.answers.textContent = '';
     el.guesses.textContent = '';
     el.guesses.hidden = true;
+    el.says.hidden = false;
+    el.says.classList.remove('as-label');
+    el.sub.hidden = false;
     el.aside.textContent = '';
     el.aside.hidden = true;
     el.tell.hidden = true;
@@ -445,7 +474,6 @@ function render() {
         return;
     }
     if (state.stage === 'ready') {
-        const said = state.current?.labels ?? [];
         say('Thanks — I will remember that.');
         if (state.finishedTotal > 0) {
             // The whole run is finished, so say so: a batch of photographs is a sitting,
@@ -459,32 +487,38 @@ function render() {
         }
         else {
             el.sub.textContent =
-                said.length > 0
-                    ? `I have noted ${listWords(said)}. I now know ${names.length} ${plural(names.length, 'thing', 'things')} ` +
-                        `from ${named.length} ${plural(named.length, 'picture', 'pictures')}. Show me another — drag one onto the ` +
-                        'box, or press the button.'
-                    : 'Show me another picture.';
+                `I now know ${names.length} ${plural(names.length, 'thing', 'things')} from ${named.length} ` +
+                    `${plural(named.length, 'picture', 'pictures')}. Show me another — drag one onto the box, or press the button.`;
         }
         el.answers.append(but('Show me a picture', 'primary', () => another()));
+        // The last box of the last picture is the likeliest place to want the way back: the run
+        // is over, the page says so, and only then does the spelling in the name show up.
+        if (state.lastAnswer)
+            el.answers.append(undoControl());
         return;
     }
     // stage === 'asking'
-    // The question is at the top of the column and its instruction is in its own label, so
-    // these two lines only add what neither of those says: what was just noted, and — while
-    // it still cannot tell two things apart — why that matters.
-    const noted = state.lastNoted.length > 0 ? `Noted ${listWords(state.lastNoted)}. ` : '';
     const askingAboutFace = currentBox() !== null;
-    // What to do, not why it cannot — the model's own voice is on the line above, and the
-    // same reason said twice on one screen is how a page starts to read as noise. And
-    // "name a second one" only means anything once there has been a first: on the opening
-    // picture it was asking for a second before any first existed.
+    // What to do, and nothing else. This line used to open with "Noted X." and close with
+    // "I will remember every one of them." — the first repeats what the box on the picture
+    // and the chart under it already show, and the second is not an instruction. George,
+    // 2026-09-19: "dont put Noted ngle. I will remember every one of them. langaurge."
+    //
+    // "Name a second one" only means anything once there has been a first — and how many
+    // pictures are actually named is the honest way to know, where the counter that used to
+    // decide it could be left behind by a skip or a second drop.
     const nudge = names.length < 2
-        ? state.lastNoted.length > 0
+        ? named.length > 0
             ? 'Name a second one and I can start telling them apart.'
             : 'Name this one and I can start learning.'
-        : 'I will remember every one of them.';
-    el.sub.textContent = `${noted}${nudge}`;
+        : '';
+    el.sub.textContent = nudge;
+    el.sub.hidden = nudge === '';
     if (state.sees.length > 0) {
+        // A label over its buttons rather than the model speaking in its own voice: it is the
+        // same size as the question it answers, because that is what it is — the head of the
+        // answer, not a sentence. See `.says.as-label` in the stylesheet.
+        el.says.classList.add('as-label');
         // One button per thing it can see, each labelled with the thing itself, so agreeing
         // with it is a single press and the box to disagree with is right above. Buttons
         // rather than a sentence naming them, because the network answers a separate yes/no
@@ -497,17 +531,27 @@ function render() {
         }
     }
     else {
-        // Nothing cleared the confidence line, so there is nothing to offer — and offering the
-        // strongest answer anyway is the dumb guess George ruled out on 2026-09-19: a name
-        // under the line is one the model has no reason to give, and a button on it invites
-        // somebody to accept it without looking. Why it has nothing to say is a fact about its
-        // own state, so say that instead.
-        say(state.model && names.length >= 2 ? "I'm not sure yet." : cannotReadYet(names, named.length));
+        // Nothing cleared the confidence line, so there is no guess — and no guess is exactly
+        // what should be on screen. George, 2026-09-19: "if it doesnt know, i dont want to see
+        // my guess." What used to be here was the reason it had nothing to say, and the line
+        // under it then said the same thing again as an instruction — "Name this one and I can
+        // start learning." is the whole of it, so the page asks once and explains once.
+        //
+        // Emptied as well as hidden: a line nobody can see still reads back out of the DOM, and
+        // a stale "My guess:" behind a hidden element is a lie waiting for the next reader.
+        el.says.textContent = '';
+        el.says.hidden = true;
     }
     // The question changes with the subject: a rectangle is a person to name, and a
     // picture with no face found in it is the picture itself.
     el.tell.hidden = false;
-    el.list.value = '';
+    // Emptied when the question changes, not on every redraw. A study run finishing redraws
+    // this column on its own, and emptying the box then deletes half a name somebody is in
+    // the middle of typing.
+    if (state.current !== clearedFor) {
+        clearedFor = state.current;
+        el.list.value = '';
+    }
     // What can be done to the boxes used to be spelled out here — three sentences of
     // instructions that sat on the page the entire time a picture was up, for a gesture
     // most people never need. The × is visible on the box itself.
@@ -532,6 +576,8 @@ function render() {
         leftInPhoto > 0
             ? `Leave this picture — ${leftInPhoto} ${plural(leftInPhoto, 'face', 'faces')} will not be named`
             : 'Leave this picture';
+    if (state.lastAnswer)
+        el.answers.append(undoControl());
 }
 /**
  * Where the run has got to, said plainly, and only while a picture is on the stage.
@@ -669,6 +715,7 @@ async function removeBox(index) {
     const turn = state.turn;
     if (!turn)
         return;
+    forgetUndo();
     turn.boxes.splice(index, 1);
     if (state.turnIndex >= turn.boxes.length)
         state.turnIndex = Math.max(0, turn.boxes.length - 1);
@@ -681,6 +728,7 @@ async function goToFace(index) {
     const turn = state.turn;
     if (!turn || index < 0 || index >= turn.boxes.length)
         return;
+    forgetUndo();
     state.turnIndex = index;
     await showFace();
 }
@@ -771,8 +819,10 @@ function enqueue(files) {
         state.current = null;
         state.photosDone = 0;
         state.finishedTotal = 0;
-        state.lastNoted = [];
     }
+    // Anything that adds pictures takes the way back with it: the snapshot describes one
+    // moment, and restoring it afterwards would drop the pictures just handed over.
+    forgetUndo();
     state.files.push(...pictures);
     if (state.turn === null)
         void nextPhoto();
@@ -877,11 +927,11 @@ async function skip() {
     const box = currentBox();
     if (state.current === null)
         return;
+    forgetUndo();
     if (box && !state.skippedBoxes.includes(box))
         state.skippedBoxes.push(box);
     state.current = null;
     state.sees = [];
-    state.lastNoted = [];
     if (state.turn && state.turnIndex + 1 < state.turn.boxes.length) {
         await nextPhoto();
         return;
@@ -907,13 +957,13 @@ async function skipImage() {
     const turn = state.turn;
     if (!turn)
         return;
+    forgetUndo();
     for (const box of turn.boxes) {
         if (!state.skippedBoxes.includes(box) && !state.namedBoxes.includes(box))
             state.skippedBoxes.push(box);
     }
     state.current = null;
     state.sees = [];
-    state.lastNoted = [];
     // Put the pointer on the last face so the ordinary "this picture is finished" path
     // runs, rather than a second way of finishing a picture existing beside it.
     state.turnIndex = Math.max(0, turn.boxes.length - 1);
@@ -942,7 +992,9 @@ function endRun() {
     state.turnIndex = 0;
     state.namedBoxes = [];
     state.skippedBoxes = [];
-    state.lastNoted = [];
+    // Deliberately NOT cleared here: the closing line of a run is reached through answer(),
+    // not through this, and the last name of the last picture is the likeliest of all to
+    // want taking back. Every caller that does reach here has already dropped it.
     state.stage = state.finishedTotal > 0 ? 'ready' : 'start';
     render();
 }
@@ -958,7 +1010,7 @@ function another() {
     state.turnIndex = 0;
     state.namedBoxes = [];
     state.skippedBoxes = [];
-    state.lastNoted = [];
+    forgetUndo();
     state.stage = 'start';
     render();
     choosePicture();
@@ -977,7 +1029,9 @@ async function answer(name, extra = 0) {
     if (extra > 0) {
         toast(`One name per box — I used "${name}".`);
     }
-    if (!state.names.includes(name))
+    const before = snapshotRun();
+    const nameWasNew = !state.names.includes(name);
+    if (nameWasNew)
         state.names.push(name);
     // One label, because one rectangle is one person, place or thing. The network still
     // answers per name underneath; a sample that happens to carry a single one is
@@ -986,12 +1040,15 @@ async function answer(name, extra = 0) {
     if (!state.samples.includes(sample))
         state.samples.push(sample);
     await store.putSample(sample);
+    // The way back, held from here until something else touches the run. The snapshot is
+    // taken above, before a single thing was written, because that is the state the box was
+    // asked in — the state to put back.
+    state.lastAnswer = { sample, name, nameWasNew, before };
     // The box is remembered as done so the overlay can show it as settled rather than
     // leaving every box looking equally unanswered.
     const box = currentBox();
     if (box && !state.namedBoxes.includes(box))
         state.namedBoxes.push(box);
-    state.lastNoted = [name];
     state.sees = [];
     // Straight on to the next face, and then the next picture. The acknowledgement is
     // carried onto the next question's line, so a run of forty faces reads as forty
@@ -1015,6 +1072,68 @@ async function answer(name, extra = 0) {
         state.stage = 'ready';
         render();
     }
+}
+/**
+ * Take the last name back.
+ *
+ * For the commonest mistake on this page: a name typed with the spelling wrong, or the
+ * wrong name for the box, pressed through before it was read back. The run is put back
+ * exactly as it stood while that box was being asked about, and the name goes back into
+ * the box with it selected — so correcting a typo is a retype, and not a hunt back
+ * through the queue for the picture it was on.
+ */
+async function undoLastAnswer() {
+    const last = state.lastAnswer;
+    if (!last)
+        return;
+    forgetUndo();
+    // The picture, the box, the counters: exactly as they were.
+    restoreRun(last.before);
+    // The name was never really given, so it comes off the picture, out of the list and out
+    // of the store. The sample was made a moment ago by showFace and carries a fresh id, so
+    // it cannot be one of the pictures saved from an earlier sitting — nothing here can
+    // touch older work.
+    const at = state.samples.indexOf(last.sample);
+    if (at >= 0)
+        state.samples.splice(at, 1);
+    last.sample.labels = [];
+    void store.deleteSample(last.sample.id).catch(() => undefined);
+    // A name that only ever existed in this one answer goes with it. A name that was
+    // already here — typed earlier, or learned from a saved memory — is left alone: it is
+    // not this answer's to remove.
+    if (last.nameWasNew && !namedSamples().some((s) => s.labels.includes(last.name))) {
+        state.names = state.names.filter((name) => name !== last.name);
+    }
+    // Ask the same box again, with the name in it ready to correct.
+    clearedFor = null;
+    render();
+    el.list.value = last.name;
+    el.list.focus();
+    el.list.select();
+    // The wrong name may already be studying. Stop that run and study again from the
+    // pictures that are actually named now, or the model keeps the very mistake the undo
+    // was meant to take back.
+    if (state.studying) {
+        state.needsStudy = true;
+        send({ type: 'stop' });
+    }
+    else {
+        study();
+    }
+    toast(`Taken back — "${last.name}" is in the box. Correct it and press Tell it.`);
+}
+/**
+ * The way back from a name typed wrong.
+ *
+ * A control in the row rather than words in the line above it: the moment a mistake is
+ * noticed is the moment the page has already moved on, and a link inside a sentence reads
+ * as part of the sentence. It names what it does, because "undo" alone beside a fresh
+ * question could as easily mean the question as the answer.
+ */
+function undoControl() {
+    const undo = link('Undo the last name', () => void undoLastAnswer());
+    undo.title = 'Take the last name back, so you can correct it';
+    return undo;
 }
 async function practise() {
     // Practising hands the drawn pictures over the way an upload does — George, 2026-09-19:
@@ -1167,7 +1286,7 @@ async function forgetEverything() {
     state.namedBoxes = [];
     state.skippedBoxes = [];
     state.draft = null;
-    state.lastNoted = [];
+    forgetUndo();
     state.stage = 'start';
     render();
     renderCard();
@@ -1207,6 +1326,9 @@ async function loadFromFile(file) {
         if (parsed.version !== MODEL_VERSION)
             throw new Error('That memory was saved by an older version and cannot be read.');
         adopt(parsed);
+        // A different model is in play now, so a way back that would put the old model's last
+        // line of guesses on screen again is dropped.
+        forgetUndo();
         render();
         toast(`Loaded — it remembers ${parsed.classes.length} things.`);
     }
@@ -1432,6 +1554,7 @@ async function boot() {
             toast('That box was too small — drag across the face you want to name.');
             return;
         }
+        forgetUndo();
         turn.boxes.push(draft);
         // Left to right again, so the numbering stays in the order a person reads them.
         turn.boxes.sort((a, b) => a.x - b.x);

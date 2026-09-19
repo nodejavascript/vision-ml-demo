@@ -225,6 +225,10 @@ h1 { font-size: clamp(28px, 5vw, 40px); line-height: 1.1; letter-spacing: -0.5px
 
 .says { font-size: clamp(19px, 2.6vw, 24px); font-weight: 650; line-height: 1.3; margin: 0 0 6px; }
 .says b { color: var(--accent); }
+/* The head of an answer rather than the model speaking in its own voice: "My guess:" over
+   its buttons is a label, so it is the size of the question it answers. The extra space on
+   top keeps the box you type in and the guesses under it from reading as one block. */
+.says.as-label { font-size: 14px; font-weight: 600; margin: 10px 0 6px; }
 /* The names it can see, as buttons labelled with the names themselves, sitting under the
    line that introduces them and over the line that says what to do next. */
 .guesses { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; }
