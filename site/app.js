@@ -328,14 +328,55 @@ function startsWith(prefix, full) {
             return false;
     return true;
 }
+/**
+ * What the page has, and what it still needs — in that order.
+ *
+ * The first version of this only ever spoke when Train was pressed, and only
+ * about what was missing: four pictures loaded and the line read “it has 0
+ * classes and 0 named images”, which reads as though the upload failed. It also
+ * went stale the moment a name was given, because nothing recomputed it. So the
+ * inventory comes first, the next step is specific, and `refresh` keeps it
+ * current rather than waiting to be asked.
+ */
+function readiness() {
+    const images = state.samples.length;
+    const named = state.samples.filter((s) => s.label !== null).length;
+    const classes = trainClasses();
+    if (images === 0) {
+        return 'No images yet. Add some above, or press “Draw a sample set”.';
+    }
+    if (named === 0) {
+        return (`${images} image${images === 1 ? '' : 's'} loaded, none named yet — so there is nothing to learn from. ` +
+            'Name them in the grid, or answer the questions in step 3.');
+    }
+    if (classes.length < 2) {
+        return (`${named} of ${images} named, but all as “${classes[0] ?? ''}”. One class cannot be told apart from ` +
+            'anything — it needs a second: a few pictures of something else (another person, or things that are ' +
+            'not this one), named the same way.');
+    }
+    if (named < 4) {
+        return (`${named} named across ${classes.length} classes (${classes.join(', ')}) — four named pictures is the ` +
+            'least worth training on, and two of each class is better.');
+    }
+    const counts = new Map();
+    for (const sample of state.samples) {
+        if (sample.label)
+            counts.set(sample.label, (counts.get(sample.label) ?? 0) + 1);
+    }
+    const thin = classes.filter((name) => (counts.get(name) ?? 0) < 2);
+    if (thin.length > 0) {
+        return (`${images} images across ${classes.length} classes, but ${thin.map((n) => `“${n}”`).join(' and ')} ` +
+            `${thin.length === 1 ? 'has' : 'have'} fewer than two pictures. Two each is the minimum.`);
+    }
+    return `Ready — ${named} named images across ${classes.length} classes (${classes.join(', ')}).`;
+}
 function startTraining() {
     if (state.training)
         return;
     const labelled = state.samples.filter((s) => s.label !== null);
     const classes = trainClasses();
     if (labelled.length < 4 || classes.length < 2) {
-        setStatus(`It needs at least two things to tell apart with two images each — right now it has ${classes.length} class${classes.length === 1 ? '' : 'es'} ` +
-            `and ${labelled.length} named image${labelled.length === 1 ? '' : 's'}. Name some below.`, 'warn');
+        setStatus(readiness(), 'warn');
         return;
     }
     const samples = labelled.map((s) => ({
@@ -456,6 +497,10 @@ function refresh() {
     renderModelCard();
     renderVerdict();
     renderInspection();
+    // Kept current rather than only spoken on demand. Silenced while training so it
+    // cannot talk over the epoch count.
+    if (!state.training)
+        setStatus(readiness());
 }
 function renderCounters() {
     const labelled = state.samples.filter((s) => s.label !== null).length;
@@ -564,7 +609,10 @@ function renderAsk() {
         })) ?? [], { max: 1, format: (v) => `${Math.round(v * 100)}%` });
     }
     else {
-        el.askCaption.textContent = 'It has no idea yet — it has not been trained. What is this?';
+        el.askCaption.textContent =
+            state.classes.length === 0
+                ? 'Nothing is named yet, so it has nothing to say. Type a name for what you see below and press “Add class”.'
+                : 'It is not sure about this one yet. What is it?';
         el.askProgress.textContent = `${state.askIndex + 1} of ${state.queue.length} waiting.`;
         drawBars(el.askBars, [], { emptyTitle: 'Nothing learned yet.', emptyHint: 'Name a few, then press Train.' });
     }
@@ -881,8 +929,9 @@ async function boot() {
         setStatus(`${samples.length} images remembered from last time, with no model yet. Press Train.`);
     }
     else {
+        // No status call here on purpose: `refresh` already states the inventory, and
+        // two sources for one line is how it drifts.
         refresh();
-        setStatus('Waiting for images.');
     }
 }
 async function classifyOne(files) {
