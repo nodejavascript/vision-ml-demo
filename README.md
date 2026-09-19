@@ -50,13 +50,28 @@ the detector found and pretending otherwise would be a lie about what the pictur
 holds. Removing is the **×**, for a box that should never have been drawn.
 
 There are two ways out, and both are links sitting under the thing they act on:
-**Skip this face** beneath the face's thumbnail, and **Skip this image** beneath the
-picture, for a photograph that turns out to hold nothing you want to name. The second
-is the answer to eight faces found and none of them wanted.
+**Skip this box** beneath the thumbnail of the box being asked about, and **Skip this
+image** beneath the picture, for a photograph that turns out to hold nothing you want to
+name. The second is the answer to eight boxes found and none of them wanted.
+
+**There is no instruction note.** Three sentences used to sit beside the thumbnail the
+whole time a picture was up — *press a box to pick it, × to remove it, or drag across a
+face to add one it missed* — for a gesture most people never need, on a page that is
+otherwise one question and one answer. The **×** is visible on the box itself, which is
+where somebody looking for it looks. The cost is that drawing a missed box by dragging
+is no longer announced anywhere; that is the trade, made deliberately.
 
 That is the whole page. There is no Train button, because the person this is for
 should not have to know what a learning rate is to teach it something. The numbers
 still exist, behind the *More detail* door.
+
+**Two lines, two jobs, and never the same sentence twice.** The bold line is the model's
+own voice and says *why it cannot answer* — *I have not been taught anything yet*, or
+*I know only sarah so far — one thing is not enough to tell two pictures apart*. The line
+under it is the page's and says *what to do* — *name this one and I can start learning*.
+These were once both explaining the same thing at once, and *name a second one* was being
+said on the opening picture, before any first one existed. If a line needs the reason the
+model cannot answer, it goes in the first; if it needs an action, the second.
 
 ## Where the faces come from
 

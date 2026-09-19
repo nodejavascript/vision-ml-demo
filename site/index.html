@@ -42,10 +42,8 @@
     <main>
       <h1>Teach it what it sees</h1>
       <p class="intro">
-        <b>Drag in as many pictures as you like</b> — it goes through them one at a time, and draws a box around
-        each thing it finds. <b>Every box is one person, place or thing</b>, and you name them one at a time:
-        <b>sarah</b>, then <b>the dog</b>, then <b>the beach</b>. A box you do not want to name can be skipped. It
-        remembers every name, so the next picture it sees it says what it can see in it.
+        <b>Drag in as many pictures as you like.</b> It goes through them one at a time and draws a box around each
+        thing it finds. Every box is <b>one person, place or thing</b> — name it, and it remembers.
       </p>
 
       <!-- The way out of an empty page. Deliberately OUTSIDE the stage card and above
@@ -92,10 +90,9 @@
             <div class="who" id="who" hidden>
               <div class="who-face">
                 <img id="face" alt="The face being asked about" />
-                <!-- Under the face, because it acts on the face. -->
-                <button class="link" id="skipFace" type="button" hidden>Skip this face</button>
+                <!-- Under the face, because it acts on the box it is asking about. -->
+                <button class="link" id="skipBox" type="button" hidden>Skip this box</button>
               </div>
-              <p class="who-note" id="whoNote"></p>
             </div>
             <label class="tell-label" for="list" id="tellLabel">Who or what is in this box? One name:</label>
             <div class="tell-row">

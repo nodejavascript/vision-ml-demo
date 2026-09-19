@@ -224,8 +224,7 @@ const el = {
   tellLabel: element<HTMLLabelElement>('tellLabel'),
   who: element<HTMLDivElement>('who'),
   face: element<HTMLImageElement>('face'),
-  whoNote: element<HTMLElement>('whoNote'),
-  skipFace: element<HTMLButtonElement>('skipFace'),
+  skipBox: element<HTMLButtonElement>('skipBox'),
   skipImage: element<HTMLButtonElement>('skipImage'),
   progressChart: element<HTMLCanvasElement>('progressChart'),
   list: element<HTMLInputElement>('list'),
@@ -312,10 +311,10 @@ function waitingPhotos(): number {
  */
 function cannotReadYet(names: string[], named: number): string {
   if (named === 0) {
-    return 'I cannot read a picture yet — I have not been taught anything.';
+    return 'I have not been taught anything yet.';
   }
   if (names.length < 2) {
-    return `I cannot read a picture yet — I only know ${listWords(names)}, and one thing is not enough to tell two pictures apart.`;
+    return `I know only ${listWords(names)} so far — one thing is not enough to tell two pictures apart.`;
   }
   return 'I am still learning — I will have something to say in a moment.';
 }
@@ -527,9 +526,15 @@ function render(): void {
   // and — while it still cannot tell two things apart — why that matters.
   const noted = state.lastNoted.length > 0 ? `Noted ${listWords(state.lastNoted)}. ` : '';
   const askingAboutFace = currentBox() !== null;
+  // What to do, not why it cannot — the why is on the line above, in the model's own
+  // voice, and the same reason said twice on one screen is how a page starts to read as
+  // noise. And "name a second one" only means anything once there has been a first: on
+  // the opening picture it was asking for a second before any first existed.
   const nudge =
     names.length < 2
-      ? `Two different ${askingAboutFace ? 'people' : 'things'} is the least I can tell apart — name a second one too.`
+      ? state.lastNoted.length > 0
+        ? 'Name a second one and I can start telling them apart.'
+        : 'Name this one and I can start learning.'
       : 'I will remember every one of them.';
 
   if (state.sees.length > 0) {
@@ -557,19 +562,12 @@ function render(): void {
   el.tell.hidden = false;
   el.list.value = '';
 
-  // What can be done to the boxes, said always — while there is a picture. Without it
-  // neither gesture is discoverable: nothing else on the page would suggest the
-  // rectangles can be changed, or that a missing one can be added.
-  const boxCount = state.turn?.boxes.length ?? 0;
+  // What can be done to the boxes used to be spelled out here — three sentences of
+  // instructions that sat on the page the entire time a picture was up, for a gesture
+  // most people never need. The × is visible on the box itself.
   el.who.hidden = false;
   el.face.hidden = !askingAboutFace;
   if (askingAboutFace && state.current) el.face.src = state.current.thumb;
-  el.whoNote.textContent =
-    boxCount === 0
-      ? 'No face found in this one, so the whole picture is what gets named. Drag across a face to add a box.'
-      : boxCount === 1
-        ? 'Wrong box? Press the × on it. Missing one? Drag across it.'
-        : 'Press a box to pick it, × to remove it, or drag across a face to add one it missed.';
 
   if (askingAboutFace) {
     el.tellLabel.textContent = 'Who or what is in this box? One name:';
@@ -580,9 +578,9 @@ function render(): void {
   }
 
   // Two ways to move on, each sitting under the thing it acts on rather than in a
-  // button row beside them: skip the face, or skip the whole picture.
+  // button row beside them: skip the box, or skip the whole picture.
   const leftInPhoto = state.turn ? state.turn.boxes.length - state.turnIndex - 1 : 0;
-  el.skipFace.hidden = !askingAboutFace;
+  el.skipBox.hidden = !askingAboutFace;
   el.skipImage.hidden = false;
   el.skipImage.title =
     leftInPhoto > 0
@@ -1440,7 +1438,7 @@ async function boot(): Promise<void> {
   // The two ways to move on. Both are links under the thing they act on rather than
   // buttons beside them, because that is what they are about: this face, or this
   // picture.
-  el.skipFace.addEventListener('click', () => void skip());
+  el.skipBox.addEventListener('click', () => void skip());
   el.skipImage.addEventListener('click', () => void skipImage());
 
   el.passes.addEventListener('change', () => {
