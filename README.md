@@ -38,9 +38,17 @@ Both share the same engine (`src/net.ts` and friends). Only the page differs.
 4. **It studies, in the background, and remembers.**
 
 The run keeps its rhythm: naming a face goes straight on to the next one, and what
-you wrote rides along on the next question's line. *Skip this face* sets somebody
-aside without teaching it. A second batch dropped mid-run queues up behind what is
-already waiting.
+you wrote rides along on the next question's line. A second batch dropped mid-run
+queues up behind what is already waiting.
+
+**A box around something you do not want to name can be skipped**, and the box shows
+that it was — dimmed, with its number struck through. Skipping is deliberately *not*
+the same as removing: the face is still there and still counted, because it is a face
+the detector found and pretending otherwise would be a lie about what the picture
+holds. Removing is the **×**, for a box that should never have been drawn. `Skip the
+other N` appears when more than one face is left, because eight faces found and one
+wanted is the ordinary case and declining the other seven one at a time is the kind of
+small tediousness that stops a page being used.
 
 That is the whole page. There is no Train button, because the person this is for
 should not have to know what a learning rate is to teach it something. The numbers

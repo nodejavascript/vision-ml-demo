@@ -140,6 +140,16 @@ h1 { font-size: clamp(28px, 5vw, 40px); line-height: 1.1; letter-spacing: -0.5px
 }
 .box.done { border-color: rgba(255, 255, 255, 0.3); }
 
+/* Declined, not removed: the face is still there and still counted, but the person has
+   dealt with it. Dimmed and struck through so a skip is visibly registered — an
+   untouched-looking box is what made skipping look like it had done nothing. */
+.box.skipped { border-color: rgba(255, 255, 255, 0.16); }
+.box.skipped .box-num {
+  background: rgba(255, 255, 255, 0.18);
+  color: rgba(236, 230, 247, 0.55);
+  text-decoration: line-through;
+}
+
 /* Inside the box, not above it: the picture is clipped to a rounded square, so
    anything hanging outside a box near the edge would be cut off. */
 .box-num {

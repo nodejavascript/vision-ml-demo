@@ -161,6 +161,15 @@ const state = {
     turnIndex: 0,
     /** Faces of this picture already named, so their boxes can show as done. */
     namedBoxes: [],
+    /**
+     * Faces the person declined to name.
+     *
+     * Tracked separately from the named ones because they are a different answer — "I
+     * do not know who this is" rather than "this is Sarah" — and because a skipped box
+     * that looks exactly like an untouched one makes the skip look as though it did not
+     * register at all.
+     */
+    skippedBoxes: [],
     /** How many pictures of this run have been finished — every face named, or skipped. */
     photosDone: 0,
     /**
@@ -523,17 +532,22 @@ function render() {
         el.tellLabel.textContent = 'What can you see in it? Just the things themselves — nouns, separated by commas:';
         el.list.placeholder = 'dog, cat, sky, beach, rail house';
     }
-    // The button says how much is behind this one, because that is the thing you want
+    // The buttons say how much is behind this one, because that is the thing you want
     // to know before deciding whether to bother with a hard picture.
     const leftInPhoto = state.turn ? state.turn.boxes.length - state.turnIndex - 1 : 0;
-    const label = askingAboutFace
-        ? leftInPhoto > 0
-            ? `Skip this face (${leftInPhoto} more in this photo)`
-            : waitingPhotos() > 0
-                ? 'Skip this face and go on'
-                : 'Skip this face'
-        : 'Show me a different picture';
-    el.controls.append(but(label, 'ghost', () => void skip()));
+    if (askingAboutFace) {
+        el.controls.append(but(leftInPhoto > 0 ? `Skip this face (${leftInPhoto} more in this photo)` : 'Skip this face', 'ghost', () => void skip()));
+        // Only offered when there is more than one face left. With a single one ahead the
+        // two buttons would still differ — this one advances to it, that one finishes the
+        // picture — but offering a second, subtly different skip to save a single press is
+        // a worse trade than just pressing skip twice.
+        if (leftInPhoto > 1) {
+            el.controls.append(but(`Skip the other ${leftInPhoto}`, 'ghost', () => void skipRest()));
+        }
+    }
+    else {
+        el.controls.append(but('Show me a different picture', 'ghost', () => void skip()));
+    }
 }
 /**
  * Where the run has got to, said plainly, and only while a picture is on the stage.
@@ -623,6 +637,8 @@ function renderBoxes() {
             element.classList.add('current');
         if (state.namedBoxes.includes(box))
             element.classList.add('done');
+        if (state.skippedBoxes.includes(box))
+            element.classList.add('skipped');
         element.style.left = `${fit.left + box.x * fit.scale}px`;
         element.style.top = `${fit.top + box.y * fit.scale}px`;
         element.style.width = `${box.w * fit.scale}px`;
@@ -795,6 +811,7 @@ async function nextPhoto() {
         state.turn = null;
         state.turnIndex = 0;
         state.namedBoxes = [];
+        state.skippedBoxes = [];
     }
     if (waitingPhotos() > 0)
         render(); // say that it is opening the next one
@@ -806,6 +823,7 @@ async function nextPhoto() {
     state.turn = nextTurn;
     state.turnIndex = 0;
     state.namedBoxes = [];
+    state.skippedBoxes = [];
     await showFace();
     const faces = nextTurn.boxes.length;
     if (faces > 0) {
@@ -840,14 +858,20 @@ async function showFace() {
     el.list.focus();
 }
 /**
- * Set the face aside without naming it.
+ * Set one face aside without naming it.
  *
  * It teaches nothing, which is the honest thing to do with somebody you cannot name
- * rather than guessing. Skipping every face of a picture moves on to the next one.
+ * rather than guessing at it. Skipping is not removing: the box stays, because it is
+ * still a face the detector found and pretending otherwise would be a lie about what
+ * the picture holds — but it is marked, so it is visibly dealt with and the person can
+ * see that the skip registered.
  */
 async function skip() {
+    const box = currentBox();
     if (state.current === null)
         return;
+    if (box && !state.skippedBoxes.includes(box))
+        state.skippedBoxes.push(box);
     state.current = null;
     state.sees = [];
     state.best = null;
@@ -860,11 +884,46 @@ async function skip() {
         await nextPhoto();
         return;
     }
-    // Nothing behind it: back to the picker, with the run cleared so the next single
-    // picture is not counted as photo two of a batch that had already ended.
+    // Nothing behind it: the run is over, with the boxes marked rather than the page
+    // jumping straight to a file dialog nobody asked for.
     endRun();
 }
-/** The run is over: back to an empty page, or the picker if there was only one. */
+/**
+ * Leave the rest of this picture alone.
+ *
+ * A group photograph is the case this exists for: eight faces found, one of them
+ * wanted. Making somebody decline the other seven one at a time is the kind of small
+ * tediousness that stops a page being used.
+ */
+async function skipRest() {
+    const turn = state.turn;
+    if (!turn)
+        return;
+    for (const box of turn.boxes) {
+        if (!state.skippedBoxes.includes(box) && !state.namedBoxes.includes(box))
+            state.skippedBoxes.push(box);
+    }
+    state.current = null;
+    state.sees = [];
+    state.best = null;
+    state.lastNoted = [];
+    // Put the pointer on the last face so the ordinary "this picture is finished" path
+    // runs, rather than a second way of finishing a picture existing beside it.
+    state.turnIndex = Math.max(0, turn.boxes.length - 1);
+    if (waitingPhotos() > 0) {
+        await nextPhoto();
+        return;
+    }
+    endRun();
+}
+/**
+ * The run is over: back to an empty page, or the closing line if there was a batch.
+ *
+ * It deliberately does NOT open the file dialog. Landing on the picker's own page with
+ * a button on it is a stable place to stop; a dialog appearing by itself the instant a
+ * skip is pressed is not, and it is the last thing somebody who just declined six
+ * faces wants thrown at them.
+ */
 function endRun() {
     state.finishedTotal = runTotal() > 1 ? runTotal() : 0;
     state.turn = null;
@@ -876,11 +935,10 @@ function endRun() {
     state.photosDone = 0;
     state.turnIndex = 0;
     state.namedBoxes = [];
+    state.skippedBoxes = [];
     state.lastNoted = [];
     state.stage = state.finishedTotal > 0 ? 'ready' : 'start';
     render();
-    if (state.finishedTotal === 0)
-        choosePicture();
 }
 /** Start again from the picker. */
 function another() {
@@ -894,6 +952,7 @@ function another() {
     state.finishedTotal = 0;
     state.turnIndex = 0;
     state.namedBoxes = [];
+    state.skippedBoxes = [];
     state.lastNoted = [];
     state.stage = 'start';
     render();
@@ -941,6 +1000,7 @@ async function answer(labels) {
         state.turn = null;
         state.turnIndex = 0;
         state.namedBoxes = [];
+        state.skippedBoxes = [];
         state.stage = 'ready';
         render();
     }
@@ -1102,6 +1162,7 @@ async function forgetEverything() {
     state.finishedTotal = 0;
     state.turnIndex = 0;
     state.namedBoxes = [];
+    state.skippedBoxes = [];
     state.draft = null;
     state.lastNoted = [];
     state.stage = 'start';
@@ -1365,6 +1426,7 @@ async function boot() {
         turn.boxes.sort((a, b) => a.x - b.x);
         state.turnIndex = turn.boxes.indexOf(draft);
         state.namedBoxes = state.namedBoxes.filter((named) => named !== draft);
+        state.skippedBoxes = state.skippedBoxes.filter((skipped) => skipped !== draft);
         void showFace();
     };
     el.boxes.addEventListener('pointerup', finishDrag);
