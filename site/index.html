@@ -50,8 +50,11 @@
 
       <!-- One thing at a time: the picture, what it says, and your answer. -->
       <section class="stage" id="stage">
-        <div class="pic" id="pic" tabindex="0" role="button" title="Drag a picture here, or click to choose one">
+        <div class="pic" id="pic" tabindex="0" role="button" title="Drag pictures here, or click to choose some">
           <img id="picture" alt="The picture you showed it" hidden />
+          <!-- The rectangles it thinks are faces. Drawn over the picture, in the
+               picture's own coordinates, so a click lands on the right face. -->
+          <div class="boxes" id="boxes" hidden></div>
           <div class="pic-empty" id="picEmpty">
             <svg viewBox="0 0 48 48" width="40" height="40" aria-hidden="true">
               <g fill="none" stroke="currentColor" stroke-width="2">
@@ -68,10 +71,16 @@
         <div class="talk">
           <p class="queue" id="queue" hidden></p>
           <p class="says" id="says">I don't know anything yet.</p>
-          <p class="sub" id="sub">Show me a picture and list everything you can see in it, and I'll start learning.</p>
+          <p class="sub" id="sub">Show me a picture and name the things you can see in it, and I'll start learning.</p>
 
           <div class="tell" id="tell" hidden>
-            <label class="tell-label" for="list">What can you see in it? Just the things themselves — nouns, separated by commas:</label>
+            <!-- Which face is being asked about, shown small and up close, because the
+                 box on a group photo is often too small to be sure of. -->
+            <div class="who" id="who" hidden>
+              <img id="face" alt="The face being asked about" />
+              <p class="who-note" id="whoNote"></p>
+            </div>
+            <label class="tell-label" for="list" id="tellLabel">What can you see in it? Just the things themselves — nouns, separated by commas:</label>
             <div class="tell-row">
               <input type="text" id="list" placeholder="dog, cat, sky, beach, rail house" autocomplete="off" />
               <button class="btn primary" id="tellBtn" type="button">Tell it</button>

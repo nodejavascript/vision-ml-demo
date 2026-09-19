@@ -28,19 +28,46 @@ Both share the same engine (`src/net.ts` and friends). Only the page differs.
 
 1. **Hand it pictures — as many as you like.** Drop a batch, or choose several. It
    puts them in a queue and goes through them **one at a time**, saying where you
-   are: *picture 3 of 12, 9 still to name*.
-2. **For each one, list everything you can see, separated by commas.** *a dog, sand,
-   the sea, sky.* See [why a list](#why-a-list).
-3. **It studies, in the background, and remembers.**
+   are: *photo 3 of 12*.
+2. **It looks for faces in each one and draws a box around what it finds.** Two
+   people in a photograph are named **one at a time** — *face 1 of 2*, then *face 2
+   of 2* — and each face is saved as its own thing to recognise, not the whole
+   photograph.
+3. **For each box, name the person.** Names only, separated by commas. A photograph
+   with no face found in it falls back to naming the picture itself.
+4. **It studies, in the background, and remembers.**
 
-The run keeps its rhythm: naming a picture goes straight on to the next one, and
-what you wrote rides along on the next picture's line. *Skip this one* sets a
-picture aside without teaching it — the honest thing to do with a picture you cannot
-describe. A second batch dropped mid-run queues up behind what is already waiting.
+The run keeps its rhythm: naming a face goes straight on to the next one, and what
+you wrote rides along on the next question's line. *Skip this face* sets somebody
+aside without teaching it. A second batch dropped mid-run queues up behind what is
+already waiting.
 
 That is the whole page. There is no Train button, because the person this is for
 should not have to know what a learning rate is to teach it something. The numbers
 still exist, behind the *More detail* door.
+
+## Where the faces come from
+
+There is **no face detector in this browser** — `window.FaceDetector` exists on
+Chrome OS and Android, not on desktop Linux — and the page has no server, no
+libraries and no downloaded weights. So `src/faces.ts` finds them out of the picture
+itself: skin has a fairly narrow range of colour, so it builds a mask of
+skin-coloured pixels in YCbCr, closes the gaps inside a face, searches for solid
+blobs, and keeps the ones shaped and sized like a head.
+
+**It is a proposer, not an authority, and the page is built around that:**
+
+- Every box has an **×** to remove it.
+- **Dragging on the picture draws a new box**, for a face it missed.
+
+That is not a nicety. It will miss faces in black-and-white photographs, in heavy
+shadow, and behind a mask or a hand; it will sometimes fire on a wooden floor. Two
+honest notes, said because pretending otherwise would be worse than the limitation:
+the colour rule is the standard one from the literature and, like the rest of that
+literature, was tuned mostly on lighter skin, so it is measurably less reliable on
+darker skin in dim light; and it knows nothing about what a face *is* — "one blob of
+skin" is all the structure it understands, so two people standing close together can
+come out as one box.
 
 ## Why a list
 

@@ -17,7 +17,8 @@
  * what a learning rate is to teach it something.
  */
 import { Cnn } from './net.js';
-import { decodeFile } from './image.js';
+import { loadPicture } from './image.js';
+import { detectFaces } from './faces.js';
 import { makeSampleSet } from './samples.js';
 import { VisionTrainer } from './trainer-host.js';
 import * as store from './store.js';
@@ -147,14 +148,32 @@ const state = {
      */
     best: null,
     /**
-     * Pictures handed over together and still to be named, in order.
+     * Pictures handed over together and not opened yet, in order.
      *
-     * Held as files rather than decoded pictures on purpose: fifty photographs
-     * decoded up front would sit in memory as fifty bitmaps for no reason.
+     * Held as files rather than opened pictures on purpose: fifty photographs opened
+     * up front would sit in memory as fifty full-size canvases for no reason.
      */
-    pending: [],
-    /** How many pictures of this run have been finished — named, or skipped. */
-    runDone: 0,
+    files: [],
+    /** Pictures that have been opened and searched for faces, waiting their turn. */
+    turns: [],
+    /** The picture on the stage, and which of its faces is being asked about. */
+    turn: null,
+    turnIndex: 0,
+    /** Faces of this picture already named, so their boxes can show as done. */
+    namedBoxes: [],
+    /** How many pictures of this run have been finished — every face named, or skipped. */
+    photosDone: 0,
+    /**
+     * How many pictures the run that just ended held, or 0 if it was a single picture.
+     *
+     * Kept because the closing line is drawn after the counters have been cleared, and
+     * recomputing it there is how "that was the last of the 6" got said about five.
+     */
+    finishedTotal: 0,
+    /** True while the next picture is being opened, so the page can say so. */
+    opening: false,
+    /** A box being dragged out by hand, before it is let go of. */
+    draft: null,
     /**
      * What the person listed for the picture just finished.
      *
@@ -180,11 +199,16 @@ const el = {
     stage: element('stage'),
     pic: element('pic'),
     picture: element('picture'),
+    boxes: element('boxes'),
     picEmpty: element('picEmpty'),
     says: element('says'),
     sub: element('sub'),
     queue: element('queue'),
     tell: element('tell'),
+    tellLabel: element('tellLabel'),
+    who: element('who'),
+    face: element('face'),
+    whoNote: element('whoNote'),
     list: element('list'),
     tellBtn: element('tellBtn'),
     answers: element('answers'),
@@ -208,30 +232,55 @@ const el = {
     forgetBtn: element('forgetBtn'),
     toast: element('toast'),
 };
-/* ------------------------------------------------------------------ *
- * The run — pictures handed over together
- * ------------------------------------------------------------------ */
 /**
  * How many pictures this run holds, counted from what is actually here rather than
  * kept in a counter of its own.
  *
- * A stored total can drift from reality — a picture skipped, a second drop arriving
+ * A stored total can drift from reality — a face skipped, a second drop arriving
  * mid-run, a queue emptied — and a page that says "4 of 12" about a queue of nine is
- * worse than one that says nothing. Deriving it from the three things that exist
- * makes that impossible.
+ * worse than one that says nothing. Deriving it from the things that exist makes
+ * that impossible.
  */
 function runTotal() {
-    const onStage = state.stage === 'asking' && state.current ? 1 : 0;
-    return state.runDone + onStage + state.pending.length;
+    return state.photosDone + (state.turn ? 1 : 0) + state.turns.length + state.files.length;
 }
 /** Which picture of the run is on the stage, counting from one. */
 function runPosition() {
-    const onStage = state.stage === 'asking' && state.current ? 1 : 0;
-    return state.runDone + onStage;
+    return state.photosDone + (state.turn ? 1 : 0);
 }
-/** More than one picture: the only time the position is worth saying. */
+/** More than one picture: the only time the position across the run is worth saying. */
 function hasRun() {
     return runTotal() > 1;
+}
+/** The face being asked about, or null when the whole picture is the subject. */
+function currentBox() {
+    const turn = state.turn;
+    if (!turn || turn.boxes.length === 0)
+        return null;
+    return turn.boxes[state.turnIndex] ?? null;
+}
+/** How many pictures are still waiting behind this one. */
+function waitingPhotos() {
+    return state.turns.length + state.files.length;
+}
+/**
+ * Why it has nothing to say about this picture.
+ *
+ * The reason is always its own state, never the picture — and saying which state is
+ * the whole point. A flat "I do not know what is in this picture yet" was true, but
+ * it read as though every picture had been considered and turned down, which is
+ * exactly what a stuck page looks like. Three separate sentences, and the third one
+ * resolves on its own because finishing a study run re-reads whatever is on the
+ * stage.
+ */
+function cannotReadYet(names, named) {
+    if (named === 0) {
+        return 'I cannot read a picture yet — I have not been taught anything.';
+    }
+    if (names.length < 2) {
+        return `I cannot read a picture yet — I only know ${listWords(names)}, and one thing is not enough to tell two pictures apart.`;
+    }
+    return 'I am still learning — I will have something to say in a moment.';
 }
 /* ------------------------------------------------------------------ *
  * The worker, with a main-thread fallback
@@ -364,15 +413,20 @@ function render() {
     // branches below returned early without refreshing it.
     renderProgress();
     renderQueue();
-    el.picture.hidden = state.current === null;
-    el.picEmpty.hidden = state.current !== null;
-    if (state.current)
-        el.picture.src = state.current.thumb;
+    // The stage shows the whole picture — a face has to be seen in place to know who it
+    // is — while the thing actually being named is the crop of one box.
+    const showing = state.turn !== null;
+    el.picture.hidden = !showing;
+    el.picEmpty.hidden = showing;
+    if (state.turn && el.picture.src !== state.turn.picture.thumb)
+        el.picture.src = state.turn.picture.thumb;
     el.answers.textContent = '';
     el.controls.textContent = '';
     el.aside.textContent = '';
     el.aside.hidden = true;
     el.tell.hidden = true;
+    el.who.hidden = true;
+    renderBoxes();
     if (state.stage === 'start') {
         say('Show me a picture.');
         el.sub.textContent =
@@ -381,7 +435,7 @@ function render() {
                     `Show me one and ${HOW_TO_LIST} ` +
                     'I need at least two different things before I can tell them apart.'
                 : `I know ${names.length} things — ${listWords(names)} — from ${named.length} ${plural(named.length, 'picture', 'pictures')}. ` +
-                    'Show me a picture and I will say what I can see in it.';
+                    'Show me a picture and I will find the faces in it.';
         el.answers.append(but('Choose a picture', 'primary', () => choosePicture()));
         // Only while there is nothing to work with: the offer is a way out of an empty
         // page, not something to reach for once you have pictures of your own.
@@ -396,12 +450,13 @@ function render() {
     if (state.stage === 'ready') {
         const said = state.current?.labels ?? [];
         say('Thanks — I will remember that.');
-        if (hasRun()) {
-            // The whole run is finished, so say so: twelve pictures is a sitting, not a
-            // single answer, and the person should see the end of it. The counts differ
-            // when something was skipped, which is why both are given.
+        if (state.finishedTotal > 0) {
+            // The whole run is finished, so say so: a batch of photographs is a sitting,
+            // not a single answer, and the person should see the end of it. The total was
+            // counted while the run still existed — recomputing it here, from counters
+            // that have already been cleared, is how "last of the 6" got said about five.
             el.sub.textContent =
-                `That was the last of the ${runTotal()}. You now have ${named.length} ` +
+                `That was the last of the ${state.finishedTotal}. You now have ${named.length} ` +
                     `${plural(named.length, 'picture', 'pictures')} and I know ${names.length} ` +
                     `${plural(names.length, 'thing', 'things')}. Drop in another batch whenever you like.`;
         }
@@ -417,13 +472,13 @@ function render() {
         return;
     }
     // stage === 'asking'
-    // The instruction to use is in the label on the answer box and the position in the
-    // run is in the chip above, so this line only adds what neither of those says:
-    // what was just noted, and — while it still cannot tell two things apart — why
-    // that matters.
+    // The instruction is in the label on the answer box and the position is in the chip
+    // above, so this line only adds what neither of those says: what was just noted,
+    // and — while it still cannot tell two things apart — why that matters.
     const noted = state.lastNoted.length > 0 ? `Noted ${listWords(state.lastNoted)}. ` : '';
+    const askingAboutFace = currentBox() !== null;
     const nudge = names.length < 2
-        ? 'Two different things is the least I can tell apart — show me a second kind of picture too.'
+        ? `Two different ${askingAboutFace ? 'people' : 'things'} is the least I can tell apart — name a second one too.`
         : 'I will remember every one of them.';
     if (state.sees.length > 0) {
         say('I can see ', listWords(state.sees.map((s) => s.name)), '.');
@@ -439,32 +494,195 @@ function render() {
         el.sub.textContent = `${noted}${nudge}`;
     }
     else {
-        say('I do not know what is in this picture yet.');
+        say(cannotReadYet(names, named.length));
         el.sub.textContent = `${noted}${nudge}`;
     }
+    // The question changes with the subject: a rectangle is a person to name, and a
+    // picture with no face found in it is the picture itself.
     el.tell.hidden = false;
     el.list.value = '';
-    // The button says how many are behind this one, because that is the thing you want
+    // What can be done to the boxes, said always — while there is a picture. Without it
+    // neither gesture is discoverable: nothing else on the page would suggest the
+    // rectangles can be changed, or that a missing one can be added.
+    const boxCount = state.turn?.boxes.length ?? 0;
+    el.who.hidden = false;
+    el.face.hidden = !askingAboutFace;
+    if (askingAboutFace && state.current)
+        el.face.src = state.current.thumb;
+    el.whoNote.textContent =
+        boxCount === 0
+            ? 'No face found in this one, so the whole picture is what gets named. Drag across a face to add a box.'
+            : boxCount === 1
+                ? 'Wrong box? Press the × on it. Missing one? Drag across it.'
+                : 'Press a box to pick it, × to remove it, or drag across a face to add one it missed.';
+    if (askingAboutFace) {
+        el.tellLabel.textContent = 'Who is this? Names only, separated by commas:';
+        el.list.placeholder = 'sarah, gran, uncle ray';
+    }
+    else {
+        el.tellLabel.textContent = 'What can you see in it? Just the things themselves — nouns, separated by commas:';
+        el.list.placeholder = 'dog, cat, sky, beach, rail house';
+    }
+    // The button says how much is behind this one, because that is the thing you want
     // to know before deciding whether to bother with a hard picture.
-    el.controls.append(but(state.pending.length > 0
-        ? `Skip this one (${state.pending.length} ${plural(state.pending.length, 'picture', 'pictures')} to go)`
-        : 'Show me a different picture', 'ghost', () => skip()));
+    const leftInPhoto = state.turn ? state.turn.boxes.length - state.turnIndex - 1 : 0;
+    const label = askingAboutFace
+        ? leftInPhoto > 0
+            ? `Skip this face (${leftInPhoto} more in this photo)`
+            : waitingPhotos() > 0
+                ? 'Skip this face and go on'
+                : 'Skip this face'
+        : 'Show me a different picture';
+    el.controls.append(but(label, 'ghost', () => void skip()));
 }
-/** Where the run has got to, said plainly, and only while a picture is on the stage. */
+/**
+ * Where the run has got to, said plainly, and only while a picture is on the stage.
+ *
+ * Two numbers rather than one, because there are two things to know: which face of
+ * this photograph, and which photograph of the batch. A single "3 of 12" could not
+ * say both.
+ */
 function renderQueue() {
     // Hidden outside the asking stage as well as outside a run: once a batch is
     // finished the count is the previous run's, and leaving "5 of 5" on a page that
     // has moved on reads as a stuck number.
-    if (state.stage !== 'asking' || !hasRun()) {
+    if (state.stage !== 'asking' || state.turn === null) {
+        el.queue.hidden = true;
+        return;
+    }
+    const parts = [];
+    const faces = state.turn.boxes.length;
+    if (faces > 0)
+        parts.push(`face ${state.turnIndex + 1} of ${faces}`);
+    if (hasRun())
+        parts.push(`photo ${runPosition()} of ${runTotal()}`);
+    if (state.opening)
+        parts.push('opening the next one…');
+    if (parts.length === 0) {
         el.queue.hidden = true;
         return;
     }
     el.queue.hidden = false;
-    el.queue.textContent =
-        `Picture ${runPosition()} of ${runTotal()}` +
-            (state.pending.length > 0
-                ? ` · ${state.pending.length} still to name`
-                : ' · last one');
+    el.queue.textContent = parts.join(' · ');
+}
+/* ------------------------------------------------------------------ *
+ * The boxes on the picture
+ * ------------------------------------------------------------------ */
+/**
+ * Where the picture actually is inside its square box.
+ *
+ * The image is fitted whole rather than cropped — `object-fit: contain` — so on a
+ * tall or wide photograph there is empty space above or beside it. A box measured in
+ * the picture's own pixels has to be mapped through that letterboxing or every
+ * rectangle would sit in the wrong place, which is worse than drawing none.
+ *
+ * Measured against the picture's OWN size, never the image element's `naturalWidth`:
+ * what is on screen is a thumbnail at a different size again, so scaling source
+ * pixels by the thumbnail's ratio would put every box out by that factor.
+ */
+function pictureInElement() {
+    const source = state.turn?.picture;
+    if (!source)
+        return null;
+    const shown = { width: el.picture.clientWidth, height: el.picture.clientHeight };
+    if (shown.width === 0 || shown.height === 0)
+        return null;
+    const scale = Math.min(shown.width / source.width, shown.height / source.height);
+    return {
+        scale,
+        left: (shown.width - source.width * scale) / 2,
+        top: (shown.height - source.height * scale) / 2,
+    };
+}
+/** The box, in the picture's own pixels, under a point in element coordinates. */
+function toPictureSpace(clientX, clientY) {
+    const fit = pictureInElement();
+    if (!fit)
+        return null;
+    const area = el.picture.getBoundingClientRect();
+    return {
+        x: Math.round((clientX - area.left - fit.left) / fit.scale),
+        y: Math.round((clientY - area.top - fit.top) / fit.scale),
+    };
+}
+function renderBoxes() {
+    el.boxes.textContent = '';
+    const turn = state.turn;
+    const fit = turn ? pictureInElement() : null;
+    // The overlay stays on the picture whenever there IS a picture, even with no boxes
+    // in it — otherwise there is nothing to drag on, and a face the detector missed
+    // could never be added. Only the boxes inside it come and go.
+    const active = turn !== null && fit !== null && state.stage === 'asking';
+    el.boxes.hidden = !active;
+    if (!active || !turn || !fit)
+        return;
+    turn.boxes.forEach((box, index) => {
+        const element = document.createElement('div');
+        element.className = 'box';
+        if (index === state.turnIndex)
+            element.classList.add('current');
+        if (state.namedBoxes.includes(box))
+            element.classList.add('done');
+        element.style.left = `${fit.left + box.x * fit.scale}px`;
+        element.style.top = `${fit.top + box.y * fit.scale}px`;
+        element.style.width = `${box.w * fit.scale}px`;
+        element.style.height = `${box.h * fit.scale}px`;
+        element.title = `Face ${index + 1} of ${turn.boxes.length} — click to name this one`;
+        const number = document.createElement('span');
+        number.className = 'box-num';
+        number.textContent = String(index + 1);
+        element.append(number);
+        // Only the box being asked about gets the ×, so a photo of twenty people is not
+        // a thicket of delete buttons.
+        if (index === state.turnIndex) {
+            const remove = document.createElement('button');
+            remove.type = 'button';
+            remove.className = 'box-x';
+            remove.textContent = '×';
+            remove.title = 'This box is wrong — remove it';
+            remove.addEventListener('click', (event) => {
+                event.stopPropagation();
+                void removeBox(index);
+            });
+            element.append(remove);
+        }
+        element.addEventListener('click', (event) => {
+            event.stopPropagation();
+            if (index !== state.turnIndex)
+                void goToFace(index);
+        });
+        el.boxes.append(element);
+    });
+    // The box being dragged out by hand, before it is let go of.
+    if (state.draft) {
+        const draft = document.createElement('div');
+        draft.className = 'draft';
+        draft.style.left = `${fit.left + state.draft.x * fit.scale}px`;
+        draft.style.top = `${fit.top + state.draft.y * fit.scale}px`;
+        draft.style.width = `${state.draft.w * fit.scale}px`;
+        draft.style.height = `${state.draft.h * fit.scale}px`;
+        el.boxes.append(draft);
+    }
+}
+/** Drop a box the person says is wrong, and carry on. */
+async function removeBox(index) {
+    const turn = state.turn;
+    if (!turn)
+        return;
+    turn.boxes.splice(index, 1);
+    if (state.turnIndex >= turn.boxes.length)
+        state.turnIndex = Math.max(0, turn.boxes.length - 1);
+    // A picture whose boxes have all been removed becomes the whole picture, which is
+    // the honest fallback: something gets named either way.
+    await showFace();
+}
+/** Move to a face the person picked out of the picture themselves. */
+async function goToFace(index) {
+    const turn = state.turn;
+    if (!turn || index < 0 || index >= turn.boxes.length)
+        return;
+    state.turnIndex = index;
+    await showFace();
 }
 function renderProgress() {
     const named = namedSamples();
@@ -505,10 +723,10 @@ function choosePicture() {
     filePicker.click();
 }
 /**
- * Hand over pictures: the first one onto the stage, the rest queued behind it.
+ * Hand over pictures: one goes on the stage, the rest queue behind it.
  *
- * Files are not decoded here. Each one is decoded when it reaches the stage, so a
- * batch of fifty costs one bitmap at a time.
+ * Files are not opened here. Each one is opened when its turn comes, so a batch of
+ * fifty costs one full-size picture in memory at a time rather than fifty.
  */
 function enqueue(files) {
     const pictures = files.filter((file) => file.type.startsWith('image/'));
@@ -525,100 +743,161 @@ function enqueue(files) {
     if (state.stage === 'ready') {
         // Whatever is on the stage has already been named, so it is not part of what
         // comes next and must not be counted as one of them.
+        state.turn = null;
         state.current = null;
-        state.runDone = 0;
+        state.photosDone = 0;
+        state.finishedTotal = 0;
         state.lastNoted = [];
     }
-    state.pending.push(...pictures);
-    if (state.current === null)
-        next();
+    state.files.push(...pictures);
+    if (state.turn === null)
+        void nextPhoto();
     else
         render();
 }
 /**
- * The next picture in the queue, or the end of the run.
+ * Open the next picture waiting, skipping any that will not open.
  *
- * Every way out of a picture arrives here — named it, or skipped it — so the count
- * on the page and the picture on the stage cannot disagree.
+ * Returns nothing when the run is over — which the caller tells apart from "there
+ * was nothing to open" only by the run counters, and does not need to.
  */
-function next() {
-    const file = state.pending.shift();
-    if (file) {
-        void showPicture(file);
+async function openNextPhoto() {
+    while (state.turns.length === 0 && state.files.length > 0) {
+        const file = state.files.shift();
+        if (!file)
+            break;
+        state.opening = true;
+        try {
+            const picture = await loadPicture(file);
+            // The search runs on the picture's own pixels, then the boxes are handed back
+            // in that same space, which is the space the overlay draws them in.
+            state.turns.push({ picture, boxes: detectFaces(picture.frame) });
+        }
+        catch {
+            toast(`${file.name} could not be read as a picture.`);
+        }
+        finally {
+            state.opening = false;
+        }
+    }
+    return state.turns.shift() ?? null;
+}
+/** Move on: the next face of this picture, or the next picture, or the end. */
+async function nextPhoto() {
+    const turn = state.turn;
+    if (turn && state.turnIndex + 1 < turn.boxes.length) {
+        state.turnIndex += 1;
+        await showFace();
         return;
     }
-    // The queue is empty. That is either the end of a run of several, or the end of a
-    // single picture handed over on its own — and the two want different pages.
-    const total = runTotal();
-    state.pending = [];
-    state.runDone = 0;
-    state.stage = total > 1 ? 'ready' : 'start';
+    if (turn) {
+        state.photosDone += 1;
+        state.turn = null;
+        state.turnIndex = 0;
+        state.namedBoxes = [];
+    }
+    if (waitingPhotos() > 0)
+        render(); // say that it is opening the next one
+    const nextTurn = await openNextPhoto();
+    if (!nextTurn) {
+        endRun();
+        return;
+    }
+    state.turn = nextTurn;
+    state.turnIndex = 0;
+    state.namedBoxes = [];
+    await showFace();
+    const faces = nextTurn.boxes.length;
+    if (faces > 0) {
+        toast(faces === 1
+            ? 'Found one face. Name it, or drag a box if it has the wrong one.'
+            : `Found ${faces} faces. They are named one at a time.`);
+    }
+}
+/** Put the face being asked about on the stage, and ask. */
+async function showFace() {
+    const turn = state.turn;
+    if (!turn)
+        return;
+    const box = currentBox();
+    const picture = turn.picture;
+    state.current = {
+        id: newId(),
+        labels: [],
+        // With a box, the thing being named is the crop of it; without one, the picture
+        // is the subject and the crop is the picture.
+        thumb: box ? picture.cropThumb(box) : picture.thumb,
+        pixels: box ? picture.crop(box) : picture.whole(),
+        name: box ? `${picture.filename} — face ${state.turnIndex + 1}` : picture.filename,
+        addedAt: new Date().toISOString(),
+        origin: 'file',
+    };
+    const now = look(state.current);
+    state.sees = now.sees;
+    state.best = now.best;
+    state.stage = 'asking';
     render();
-    if (total <= 1)
-        choosePicture();
+    el.list.focus();
 }
 /**
- * Set the picture aside without naming it. It teaches nothing — which is the honest
- * thing to do with a picture you cannot describe, rather than guessing at it.
+ * Set the face aside without naming it.
+ *
+ * It teaches nothing, which is the honest thing to do with somebody you cannot name
+ * rather than guessing. Skipping every face of a picture moves on to the next one.
  */
-function skip() {
+async function skip() {
     if (state.current === null)
         return;
-    if (hasRun())
-        state.runDone += 1;
     state.current = null;
     state.sees = [];
     state.best = null;
     state.lastNoted = [];
-    if (state.pending.length > 0) {
-        next();
+    if (state.turn && state.turnIndex + 1 < state.turn.boxes.length) {
+        await nextPhoto();
         return;
     }
-    state.runDone = 0;
-    state.stage = 'start';
-    render();
-    choosePicture();
+    if (waitingPhotos() > 0) {
+        await nextPhoto();
+        return;
+    }
+    // Nothing behind it: back to the picker, with the run cleared so the next single
+    // picture is not counted as photo two of a batch that had already ended.
+    endRun();
 }
-/**
- * Start again from the picker.
- *
- * Used by the "Show me a picture" button once a run is finished, so it clears the
- * run with it — otherwise the next single picture would be counted as picture two
- * of a batch that had already ended.
- */
-function another() {
+/** The run is over: back to an empty page, or the picker if there was only one. */
+function endRun() {
+    state.finishedTotal = runTotal() > 1 ? runTotal() : 0;
+    state.turn = null;
     state.current = null;
     state.sees = [];
     state.best = null;
-    state.pending = [];
-    state.runDone = 0;
+    state.turns = [];
+    state.files = [];
+    state.photosDone = 0;
+    state.turnIndex = 0;
+    state.namedBoxes = [];
+    state.lastNoted = [];
+    state.stage = state.finishedTotal > 0 ? 'ready' : 'start';
+    render();
+    if (state.finishedTotal === 0)
+        choosePicture();
+}
+/** Start again from the picker. */
+function another() {
+    state.turn = null;
+    state.current = null;
+    state.sees = [];
+    state.best = null;
+    state.turns = [];
+    state.files = [];
+    state.photosDone = 0;
+    state.finishedTotal = 0;
+    state.turnIndex = 0;
+    state.namedBoxes = [];
     state.lastNoted = [];
     state.stage = 'start';
     render();
     choosePicture();
-}
-async function showPicture(file) {
-    try {
-        const decoded = await decodeFile(file);
-        state.current = {
-            id: newId(),
-            labels: [],
-            thumb: decoded.thumb,
-            pixels: decoded.pixels,
-            name: file.name,
-            addedAt: new Date().toISOString(),
-            origin: 'file',
-        };
-        const now = look(state.current);
-        state.sees = now.sees;
-        state.best = now.best;
-        state.stage = 'asking';
-        render();
-        el.list.focus();
-    }
-    catch {
-        toast('That file could not be read as a picture.');
-    }
 }
 async function answer(labels) {
     const sample = state.current;
@@ -636,21 +915,35 @@ async function answer(labels) {
     if (!state.samples.includes(sample))
         state.samples.push(sample);
     await store.putSample(sample);
-    if (hasRun())
-        state.runDone += 1;
+    // The box is remembered as done so the overlay can show it as settled rather than
+    // leaving every box looking equally unanswered.
+    const box = currentBox();
+    if (box && !state.namedBoxes.includes(box))
+        state.namedBoxes.push(box);
     state.lastNoted = labels;
     state.sees = [];
     state.best = null;
-    if (state.pending.length > 0) {
-        // Straight on to the next one. The acknowledgement is carried onto its line, so
-        // a run of twenty reads as twenty answers rather than twenty confirmations.
-        next();
+    // Straight on to the next face, and then the next picture. The acknowledgement is
+    // carried onto the next question's line, so a run of forty faces reads as forty
+    // answers rather than forty confirmations.
+    study();
+    if (state.turn && state.turnIndex + 1 < state.turn.boxes.length) {
+        await nextPhoto();
+    }
+    else if (waitingPhotos() > 0) {
+        await nextPhoto();
     }
     else {
+        // The last one. The total is worked out here, while the counters still exist,
+        // and the closing line reads it rather than recomputing it from nothing.
+        state.finishedTotal = runTotal() > 1 ? runTotal() : 0;
+        state.photosDone = 0;
+        state.turn = null;
+        state.turnIndex = 0;
+        state.namedBoxes = [];
         state.stage = 'ready';
         render();
     }
-    study();
 }
 async function practise() {
     // The drawn pictures are honest multi-label examples: every one is a shape in a
@@ -802,6 +1095,15 @@ async function forgetEverything() {
     state.current = null;
     state.sees = [];
     state.best = null;
+    state.turn = null;
+    state.turns = [];
+    state.files = [];
+    state.photosDone = 0;
+    state.finishedTotal = 0;
+    state.turnIndex = 0;
+    state.namedBoxes = [];
+    state.draft = null;
+    state.lastNoted = [];
     state.stage = 'start';
     render();
     renderCard();
@@ -984,13 +1286,92 @@ async function boot() {
     // the gesture is visible rather than something you have to already know about.
     // The whole window is the target on purpose — aiming at one small rectangle is a
     // fussy thing to ask of somebody.
-    el.pic.addEventListener('click', () => choosePicture());
+    el.pic.addEventListener('click', () => {
+        // Only opens the picker when there is nothing on the stage. With a picture
+        // showing, a click is either picking a face or starting to drag a new box, and
+        // re-opening the file dialog on top of that would be maddening.
+        if (state.turn === null)
+            choosePicture();
+    });
     el.pic.addEventListener('keydown', (event) => {
         if (event.key === 'Enter' || event.key === ' ') {
             event.preventDefault();
-            choosePicture();
+            if (state.turn === null)
+                choosePicture();
         }
     });
+    /* ---------- drawing a box by hand ---------- */
+    // The detector will miss faces — a black-and-white photograph, a face in shadow —
+    // and it will occasionally draw a box around something that is not a face at all.
+    // Being able to add one and remove one is what keeps the page usable when the
+    // guess is wrong, which it will be.
+    let dragging = null;
+    el.boxes.addEventListener('pointerdown', (event) => {
+        if (state.turn === null || state.stage !== 'asking')
+            return;
+        // A press that landed on a box is that box's business, not a new box.
+        if (event.target !== el.boxes)
+            return;
+        const point = toPictureSpace(event.clientX, event.clientY);
+        if (!point)
+            return;
+        event.preventDefault();
+        dragging = point;
+        state.draft = { x: point.x, y: point.y, w: 0, h: 0 };
+        el.boxes.setPointerCapture(event.pointerId);
+    });
+    el.boxes.addEventListener('pointermove', (event) => {
+        if (!dragging)
+            return;
+        const point = toPictureSpace(event.clientX, event.clientY);
+        if (!point)
+            return;
+        const turn = state.turn;
+        // Clamped to the picture: the overlay covers the letterboxing either side of a
+        // tall photo too, and a box dragged out there would be off the image entirely.
+        const x = turn ? Math.max(0, Math.min(turn.picture.width, point.x)) : point.x;
+        const y = turn ? Math.max(0, Math.min(turn.picture.height, point.y)) : point.y;
+        state.draft = {
+            x: Math.min(dragging.x, x),
+            y: Math.min(dragging.y, y),
+            w: Math.abs(x - dragging.x),
+            h: Math.abs(y - dragging.y),
+        };
+        renderBoxes();
+    });
+    const finishDrag = (event) => {
+        if (!dragging)
+            return;
+        const draft = state.draft;
+        dragging = null;
+        state.draft = null;
+        if (el.boxes.hasPointerCapture(event.pointerId))
+            el.boxes.releasePointerCapture(event.pointerId);
+        const turn = state.turn;
+        if (!turn || !draft) {
+            renderBoxes();
+            return;
+        }
+        // Anything smaller than a tenth of the picture across is a mis-click rather than
+        // a box, and a box that size would be a face nobody could recognise anyway.
+        const tooSmall = draft.w < turn.picture.width * 0.06 || draft.h < turn.picture.height * 0.06;
+        if (tooSmall) {
+            renderBoxes();
+            toast('That box was too small — drag across the face you want to name.');
+            return;
+        }
+        turn.boxes.push(draft);
+        // Left to right again, so the numbering stays in the order a person reads them.
+        turn.boxes.sort((a, b) => a.x - b.x);
+        state.turnIndex = turn.boxes.indexOf(draft);
+        state.namedBoxes = state.namedBoxes.filter((named) => named !== draft);
+        void showFace();
+    };
+    el.boxes.addEventListener('pointerup', finishDrag);
+    el.boxes.addEventListener('pointercancel', finishDrag);
+    // The boxes are measured from the rendered picture, and it has no size until its
+    // thumbnail has arrived — so they are drawn again the moment it does.
+    el.picture.addEventListener('load', () => renderBoxes());
     const carriesFiles = (event) => Array.from(event.dataTransfer?.types ?? []).includes('Files');
     // dragenter fires again for every element entered, so a depth count is what keeps
     // the highlight on until the pointer actually leaves the page.
@@ -1029,7 +1410,12 @@ async function boot() {
         el.stage.scrollIntoView({ block: 'nearest' });
         enqueue(files);
     });
-    window.addEventListener('resize', () => renderCharts());
+    // The boxes are placed from the picture's rendered size, so a resize moves the
+    // picture and every box has to move with it.
+    window.addEventListener('resize', () => {
+        renderCharts();
+        renderBoxes();
+    });
     // A rename must not strand what is already saved. See store.migrateLegacy.
     const carried = await store.migrateLegacy().catch(() => ({ carried: 0, failed: true }));
     const [samples, model, passes, sure, augment] = await Promise.all([
