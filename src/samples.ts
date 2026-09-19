@@ -109,3 +109,35 @@ export function makeSampleSet(perClass = 30, seed = 7): GeneratedSample[] {
   }
   return out;
 }
+
+/**
+ * Some of the drawn pictures, handed over as files.
+ *
+ * Practising must not become a second way through the page. If the drawn pictures went
+ * straight into the model they would skip the whole loop — the queue, the picture being
+ * searched for faces, one box named at a time — and what got practised would not be what
+ * the page actually does when pictures arrive. So they leave here as files and are
+ * handed to exactly the code an upload goes through.
+ *
+ * Taken at even intervals across the whole set rather than from the front: the set is
+ * generated grouped by shape, so the first ten would be ten circles and there would be
+ * nothing in them to tell apart.
+ */
+export function makeSampleFiles(count = 10, seed = 7): File[] {
+  const all = makeSampleSet(30, seed);
+  if (all.length === 0 || count < 1) return [];
+
+  const step = all.length / count;
+  const out: File[] = [];
+  for (let i = 0; i < count; i++) {
+    const item = all[Math.floor(i * step)];
+    if (!item) continue;
+    // The thumbnail is already the picture at full drawn size, so it is decoded back
+    // rather than drawn a second time. It is a JPEG, and the name says so — a file
+    // called .png holding JPEG bytes is the kind of small lie that costs an hour later.
+    const base64 = item.thumb.slice(item.thumb.indexOf(',') + 1);
+    const bytes = Uint8Array.from(atob(base64), (ch) => ch.charCodeAt(0));
+    out.push(new File([bytes], item.name.replace(/\.png$/, '.jpg'), { type: 'image/jpeg' }));
+  }
+  return out;
+}

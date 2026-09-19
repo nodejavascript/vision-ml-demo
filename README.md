@@ -131,10 +131,23 @@ that *sitting* is not a thing, so "a cat sitting on a wall" comes out as
 the noun ends — and the page echoes back every name it stored, so a bad one is visible
 immediately rather than buried in the vocabulary.
 
-No pictures handy? **It will practise on that same set** — 90 drawn shapes, each a
-shape in a colour, so every one of them is a two-label picture. The offer is a small
-link just above the stage card, and it only appears while you have nothing named of
-your own.
+No pictures handy? **The practise link queues the page's own drawn shapes** — ten of
+them, taken at even intervals across the set so all three shapes are represented, since
+the set is generated grouped by shape and the first ten would be ten circles. They are
+handed over as **files**, not pushed into the model: they queue, each is opened in turn,
+each is searched for faces, and every box is named by hand. Nothing is taught on your
+behalf — what you practise is the loop a real upload goes through, not a shortcut beside
+it. The offer is a small link just above the stage card, and it only appears while you
+have nothing named of your own.
+
+**One honest consequence, measured:** the drawn shapes are flat colour on flat colour,
+and the face detector is a proposer that will guess. Across the generated set, **1–8% of
+drawn pictures get a phantom box** — usually a few 8–18 px specks at the shape's
+anti-aliased edge, occasionally the whole shape when its hue happens to land in the skin
+range. The practise toast says so, and the **×** is the answer. It is the same behaviour
+you would get uploading a photograph of a bright orange circle, so the detector has not
+been tuned around it — a threshold that hid these would start rejecting small faces in
+real photographs, which is the thing it exists to find.
 
 ## The model
 

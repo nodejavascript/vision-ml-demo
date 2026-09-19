@@ -19,7 +19,7 @@
 import { Cnn } from './net.js';
 import { loadPicture } from './image.js';
 import { detectFaces } from './faces.js';
-import { makeSampleSet } from './samples.js';
+import { makeSampleFiles } from './samples.js';
 import { VisionTrainer } from './trainer-host.js';
 import * as store from './store.js';
 import { drawBars, drawLine, drawProgress, drawTiles } from './charts.js';
@@ -231,6 +231,11 @@ const el = {
     forgetBtn: element('forgetBtn'),
     toast: element('toast'),
 };
+/* ------------------------------------------------------------------ *
+ * The run — pictures handed over together, face by face
+ * ------------------------------------------------------------------ */
+/** How many drawn pictures the practise link hands over. */
+const PRACTISE_COUNT = 10;
 /**
  * How many pictures this run holds, counted from what is actually here rather than
  * kept in a counter of its own.
@@ -441,7 +446,7 @@ function render() {
         if (named.length === 0) {
             el.aside.append('No pictures handy? ');
             el.aside.append(link('practise', () => void practise()));
-            el.aside.append(' on 90 drawn shapes.');
+            el.aside.append(` on ${PRACTISE_COUNT} drawn shapes.`);
             el.aside.hidden = false;
         }
         return;
@@ -1026,25 +1031,19 @@ async function answer(name, extra = 0) {
     }
 }
 async function practise() {
-    // The drawn pictures are honest multi-label examples: every one is a shape in a
-    // colour, so a blue circle is both "circle" and "blue", and every picture gets
-    // reused by both answers.
-    const drawn = makeSampleSet(30, 7);
-    const added = drawn.map((item) => ({
-        id: newId(),
-        labels: [item.label, item.colour],
-        thumb: item.thumb,
-        pixels: item.pixels,
-        name: item.name,
-        addedAt: new Date().toISOString(),
-        origin: 'sample',
-    }));
-    state.samples.push(...added);
-    learnNames();
-    await store.putSamples(added);
-    toast('Drew 90 pictures — each is a shape on a coloured background, so every one of them teaches two things at once.');
-    render();
-    study();
+    // Practising hands the drawn pictures over the way an upload does — George, 2026-09-19:
+    // "load them all in the drag pictures here, like 10, so i can train the model as if i
+    // uploaded them". So nothing is taught on the person's behalf: the shapes queue up,
+    // each is opened in turn and searched for faces, and every box is named by hand. What
+    // is practised is therefore the real loop, not a shortcut through it.
+    const files = makeSampleFiles(PRACTISE_COUNT);
+    if (files.length === 0) {
+        toast('The drawn shapes could not be prepared.');
+        return;
+    }
+    toast(`${files.length} drawn shapes queued — a shape on a coloured background, so naming one teaches two things. ` +
+        'These hold no faces, so a box on one is the detector guessing: the × removes it.');
+    enqueue(files);
 }
 /**
  * Study, in the background.
