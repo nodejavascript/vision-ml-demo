@@ -99,6 +99,16 @@ export interface TrainPayload {
   validationSplit: number;
   augment: boolean;
   seed: number;
+  /**
+   * Give up after this many milliseconds, even with epochs left.
+   *
+   * A fixed number of passes takes longer the more pictures there are, so a page
+   * that studies after every single answer would get slower and slower until it
+   * felt broken. A budget keeps the wait the same at ten pictures and at two
+   * hundred — and because each run continues from the last set of weights, the
+   * learning still accumulates across answers rather than being lost.
+   */
+  budgetMs?: number;
 }
 
 export interface TrainStarted {

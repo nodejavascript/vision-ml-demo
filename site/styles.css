@@ -1,6 +1,8 @@
 /* ============================================================
-   vision-demo — deep purple, system fonts, no external assets.
-   Sibling of llm-demo: same palette, same family feel.
+   vision-demo — the simple version.
+   Same deep-purple family as llm-demo, and rag's spacing values
+   so the two pages sit together: 940px column, 32/60 on main,
+   24px cards with a bottom margin only, 26/20/40 footer.
    ============================================================ */
 
 :root {
@@ -19,25 +21,18 @@
   --accent-soft: rgba(139, 92, 246, 0.14);
 
   --yellow: #fbbf24;
-  --yellow-bright: #fcd34d;
-  --yellow-ink: #1f1300;
-
   --danger: #f87171;
 
   --radius: 14px;
-  --radius-lg: 22px;
-  /* The same column as llm-demo, so the two pages line up side by side. */
   --container: 940px;
 
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
 }
 
 * { box-sizing: border-box; }
 
 /* `hidden` has to beat any display rule, or a control hidden in the markup comes
-   back the moment a class gives it a display. The toast is positioned with a
-   display, so without this it would never go away. */
+   back the moment a class gives it a display. */
 [hidden] { display: none !important; }
 
 html, body { margin: 0; padding: 0; }
@@ -61,8 +56,6 @@ body {
   * { transition: none !important; animation: none !important; }
 }
 
-/* ---------- shell ---------- */
-
 .skip { position: absolute; left: -9999px; top: 0; }
 .skip:focus {
   left: 8px; top: 8px; z-index: 30;
@@ -70,10 +63,12 @@ body {
   background: var(--accent); color: #14092b; font-weight: 700;
 }
 
+/* ---------- header ---------- */
+
 .top {
   position: sticky; top: 0; z-index: 10;
-  display: flex; flex-wrap: wrap; gap: 14px;
-  align-items: center; justify-content: space-between;
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+  gap: 14px;
   padding: 12px 20px;
   background: rgba(8, 5, 13, 0.82);
   backdrop-filter: blur(14px);
@@ -82,285 +77,178 @@ body {
 
 .brand { display: inline-flex; align-items: center; gap: 10px; color: var(--text); text-decoration: none; }
 .brand .mark { color: var(--accent); display: inline-flex; }
-/* 1.1 on the name, matching rag, is what keeps the header at 60px. At the inherited
-   1.6 the two brand lines measure 42px instead of 35, and the bar grows to 67 —
-   which in turn pushes every heading on the page 7px lower. */
 .brand b { display: block; font-size: 15px; letter-spacing: 0.2px; line-height: 1.1; }
 .brand small {
   display: block; color: var(--muted); font-size: 11.5px;
   letter-spacing: 0.4px; text-transform: uppercase;
 }
-
-.top nav { display: flex; flex-wrap: wrap; gap: 20px; font-size: 14px; }
-.top nav a { color: var(--muted); text-decoration: none; }
+.top nav a { color: var(--muted); text-decoration: none; font-size: 14px; }
 .top nav a:hover, .top nav a:focus-visible { color: var(--text); }
+
+/* ---------- page ---------- */
 
 main { max-width: var(--container); margin: 0 auto; padding: 32px 20px 60px; }
 
-/* ---------- hero ---------- */
+h1 { font-size: clamp(28px, 5vw, 40px); line-height: 1.1; letter-spacing: -0.5px; margin: 0 0 12px; }
 
-/* rag's hero rhythm: 26px above, 34px below. The bottom figure is not cosmetic —
-   it is the gap the first card does not add for itself, because a panel carries a
-   bottom margin only. */
-.hero { padding-block: 26px 34px; }
+.intro { color: var(--muted); font-size: 16px; margin: 0 0 26px; max-width: 62ch; }
 
-h1 { font-size: clamp(30px, 6vw, 46px); line-height: 1.1; margin: 0 0 20px; letter-spacing: -0.5px; }
-h2 { font-size: clamp(20px, 3vw, 26px); margin: 0 0 6px; letter-spacing: -0.2px; }
+/* ---------- the stage: one picture, one question ---------- */
 
-.lede { font-size: clamp(16px, 2.4vw, 19px); color: #d6cdea; margin: 0 0 22px; max-width: 62ch; }
-
-.facts { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
-.facts li { position: relative; padding-left: 22px; color: var(--muted); font-size: 14.5px; }
-.facts li::before {
-  content: ""; position: absolute; left: 4px; top: 10px;
-  width: 7px; height: 7px; border-radius: 50%; background: var(--yellow);
-}
-.facts b { color: var(--text); }
-
-.notice {
-  margin-top: 20px; padding: 12px 14px;
-  border-radius: var(--radius);
-  border: 1px solid rgba(251, 191, 36, 0.35);
-  background: rgba(251, 191, 36, 0.08);
-  color: #f3e3bd; font-size: 14px;
-}
-.notice b { color: var(--yellow-bright); }
-
-/* ---------- panels ---------- */
-
-.panel {
-  /* Bottom only, like rag's cards. A top margin stacks onto the hero's own bottom
-     padding, so the gap under the heading becomes the sum of the two and reads as
-     a hole. The footer needs no top margin for the same reason: main's 60px
-     bottom padding already separates the last card from the rule. */
-  margin: 0 0 22px;
+.stage {
+  display: grid;
+  grid-template-columns: minmax(200px, 300px) 1fr;
+  gap: 26px;
+  align-items: start;
   padding: 24px;
-  border-radius: var(--radius-lg);
+  margin: 0 0 22px;
+  border-radius: var(--radius);
   border: 1px solid var(--line);
   background: linear-gradient(180deg, rgba(27, 16, 44, 0.72), rgba(14, 8, 23, 0.72));
-  scroll-margin-top: 76px;
 }
-.panel.plain { background: rgba(20, 11, 34, 0.5); }
-.panel.plain p { color: var(--muted); max-width: 72ch; }
-.panel.plain ul { margin-top: 12px; }
 
-.panel-head { display: flex; gap: 14px; align-items: flex-start; margin-bottom: 18px; }
-.step {
-  flex: 0 0 auto;
-  width: 30px; height: 30px; border-radius: 50%;
-  display: grid; place-items: center;
-  background: var(--accent-soft); color: var(--accent);
-  border: 1px solid rgba(167, 139, 250, 0.4);
-  font-weight: 700; font-size: 14px;
+.pic {
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.35);
+  overflow: hidden;
 }
-.panel-note { margin: 0; color: var(--muted); font-size: 14px; max-width: 74ch; }
+.pic img { display: block; width: 100%; aspect-ratio: 1; object-fit: contain; background: #000; }
+.pic-empty {
+  aspect-ratio: 1;
+  display: grid; place-items: center; align-content: center; gap: 10px;
+  color: rgba(168, 156, 196, 0.6);
+  text-align: center;
+}
+.pic-empty p { margin: 0; font-size: 14px; }
 
-/* ---------- buttons ---------- */
+.talk { min-width: 0; }
 
-.row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
-.row.tight { gap: 8px; margin-top: 12px; }
+.says { font-size: clamp(19px, 2.6vw, 24px); font-weight: 650; line-height: 1.3; margin: 0 0 6px; }
+.says b { color: var(--accent); }
+.sub { color: var(--muted); font-size: 14.5px; margin: 0 0 16px; }
+
+/* The names it knows, as buttons big enough to tap without aiming. */
+.answers { display: flex; flex-wrap: wrap; gap: 10px; }
+.answers .btn { font-size: 15px; padding: 10px 16px; }
+.answers .btn.guess {
+  background: var(--accent); border-color: var(--accent); color: #14092b;
+}
+.answers .btn.guess:hover:not(:disabled) { background: #b9a3fb; }
+
+.newthing { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.newthing input {
+  flex: 1 1 200px; min-width: 0;
+  padding: 10px 12px; font: inherit; font-size: 15px;
+  color: var(--text); background: var(--surface-2);
+  border: 1px solid var(--line); border-radius: 10px;
+}
+.newthing input::placeholder { color: rgba(168, 156, 196, 0.7); }
+
+.row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 16px; }
 
 .btn {
   appearance: none; cursor: pointer;
-  padding: 9px 15px; border-radius: 11px;
+  padding: 10px 16px; border-radius: 11px;
   border: 1px solid var(--border-strong);
   background: rgba(255, 255, 255, 0.04);
-  color: var(--text); font: inherit; font-size: 14.5px; font-weight: 600;
+  color: var(--text); font: inherit; font-size: 15px; font-weight: 600;
 }
 .btn:hover:not(:disabled) { background: rgba(255, 255, 255, 0.09); }
 .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #14092b; }
+.btn.primary:hover:not(:disabled) { background: #b9a3fb; }
 .btn.ghost { background: transparent; color: var(--muted); }
 .btn.ghost:hover:not(:disabled) { color: var(--text); background: rgba(255, 255, 255, 0.05); }
-.btn.primary {
-  background: var(--accent); border-color: var(--accent);
-  color: #14092b;
-}
-.btn.primary:hover:not(:disabled) { background: #b9a3fb; }
 .btn.danger { color: var(--danger); }
 .btn.danger:hover:not(:disabled) { background: rgba(248, 113, 113, 0.12); }
 
-/* ---------- the drop zone ---------- */
+/* ---------- what it knows so far ---------- */
 
-.drop {
-  display: grid; place-items: center; gap: 2px;
-  padding: 30px 18px; margin-bottom: 14px;
-  border-radius: var(--radius);
-  border: 1.5px dashed var(--border-strong);
-  background: rgba(255, 255, 255, 0.02);
-  text-align: center; cursor: pointer;
-}
-.drop.small { padding: 18px; }
-.drop:hover, .drop:focus-visible, .drop.over {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-  outline: none;
-}
-.drop-title { margin: 0; font-weight: 600; }
-.drop-hint { margin: 0; color: var(--muted); font-size: 13.5px; }
-.linkish { color: var(--accent); text-decoration: underline; }
-
-.counters { display: flex; flex-wrap: wrap; gap: 18px; margin: 14px 0 4px; color: var(--muted); font-size: 14px; }
-.counters b { color: var(--text); font-size: 16px; }
-.hint { color: var(--muted); font-size: 13.5px; margin: 6px 0 12px; }
-
-/* ---------- the image grid ---------- */
-
-.grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
-  gap: 12px;
-}
-.card {
-  position: relative;
+.progress {
+  margin: 0 0 22px;
+  padding: 12px 16px;
   border-radius: var(--radius);
   border: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.22);
+  color: var(--muted); font-size: 14.5px;
+}
+.progress b { color: var(--text); }
+
+/* It studies in the background, so this says so rather than leaving the page
+   looking idle while the numbers quietly improve. */
+.studying {
+  margin: -12px 0 22px;
+  padding-left: 16px;
+  color: var(--accent);
+  font-size: 13.5px;
+}
+
+/* ---------- the chart, and the door to the rest ---------- */
+
+.card {
+  padding: 24px;
+  margin: 0 0 22px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: rgba(20, 11, 34, 0.5);
+}
+.card h2 { font-size: 17px; font-weight: 650; margin: 0 0 2px; }
+.card .note { color: var(--muted); font-size: 14px; margin: 0 0 14px; }
+
+canvas {
+  display: block; width: 100%;
+  border-radius: 12px;
+  border: 1px solid var(--line);
   background: rgba(0, 0, 0, 0.25);
-  overflow: hidden;
 }
-.card.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
-.card img { display: block; width: 100%; aspect-ratio: 1; object-fit: cover; background: #000; }
-.card .body { padding: 7px 8px 8px; display: grid; gap: 6px; }
-.card select {
-  width: 100%; padding: 4px 6px; font: inherit; font-size: 12.5px;
-  color: var(--text); background: var(--surface-2);
-  border: 1px solid var(--line); border-radius: 8px;
-}
-.card .badge {
-  display: flex; align-items: center; justify-content: space-between; gap: 6px;
-  font-size: 11.5px; color: var(--muted);
-}
-.card .badge .said { color: var(--accent); font-weight: 600; }
-.card .badge .said.unsure { color: var(--yellow); font-weight: 600; }
-.card .badge .said.none { color: var(--muted); font-weight: 400; }
-.card .kill {
-  position: absolute; top: 6px; right: 6px;
-  width: 22px; height: 22px; border-radius: 50%;
-  display: grid; place-items: center; cursor: pointer;
-  border: 1px solid var(--line); background: rgba(0, 0, 0, 0.55);
-  color: var(--muted); font-size: 13px; line-height: 1;
-}
-.card .kill:hover { color: var(--danger); border-color: var(--danger); }
+/* Heights live in CSS. Left to the height attribute the box's aspect ratio
+   decides how tall it renders, which feeds back into the drawing code, because
+   every chart reads clientHeight to size its backing store. */
+#confusedChart { height: 140px; }
+#rightChart { height: 150px; }
+#mixChart { height: 190px; }
+#filtersChart, #mapsChart { height: 170px; }
 
-/* ---------- controls ---------- */
+.more { padding: 0; }
+.more > summary {
+  cursor: pointer;
+  padding: 18px 24px;
+  font-weight: 650;
+  list-style: none;
+}
+.more > summary::-webkit-details-marker { display: none; }
+.more > summary::before { content: "▸ "; color: var(--accent); }
+.more[open] > summary::before { content: "▾ "; }
+.more > summary:hover { color: var(--accent); }
+.more > *:not(summary) { margin-left: 24px; margin-right: 24px; }
+.more > *:last-child { margin-bottom: 24px; }
 
-.controls { display: flex; flex-wrap: wrap; gap: 14px 20px; margin-bottom: 14px; }
-.controls label { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
-.controls input[type="number"], .controls input[type="text"] {
-  width: 118px; padding: 7px 9px; font: inherit; font-size: 14px;
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 20px; }
+.grid2 figure { margin: 0; }
+.grid2 figcaption { color: var(--muted); font-size: 13px; margin-bottom: 6px; }
+
+.controls { display: flex; flex-wrap: wrap; gap: 14px 22px; margin: 20px 0 0; }
+.controls label { display: grid; gap: 4px; font-size: 13.5px; color: var(--muted); }
+.controls input[type="number"] {
+  width: 110px; padding: 8px 10px; font: inherit; font-size: 15px;
   color: var(--text); background: var(--surface-2);
   border: 1px solid var(--line); border-radius: 9px;
 }
-.controls label.check { display: flex; align-items: center; gap: 8px; grid-column: 1 / -1; }
-.controls input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent); }
+.controls label.check { display: flex; align-items: center; gap: 9px; grid-column: 1 / -1; }
+.controls input[type="checkbox"] { width: 17px; height: 17px; accent-color: var(--accent); }
 
 .status {
-  margin: 14px 0; padding: 10px 12px;
-  border-radius: var(--radius);
+  margin: 18px 0 0;
+  padding: 11px 14px;
+  border-radius: 10px;
   border: 1px solid var(--line);
   background: rgba(0, 0, 0, 0.22);
   color: var(--muted); font-size: 13.5px;
 }
-.status.good { border-color: rgba(167, 139, 250, 0.45); color: var(--text); }
-.status.warn { border-color: rgba(251, 191, 36, 0.4); color: #f0dcae; }
-
-/* ---------- kpis ---------- */
-
-.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 18px; }
-.kpi {
-  padding: 10px 12px; border-radius: var(--radius);
-  border: 1px solid var(--line); background: rgba(0, 0, 0, 0.2);
-}
-.kpi span { display: block; color: var(--muted); font-size: 12px; }
-.kpi b { font-size: 19px; font-variant-numeric: tabular-nums; }
-
-/* ---------- charts ---------- */
-
-.charts { display: grid; gap: 16px; }
-.charts.two { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
-.charts.three { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
-.charts figure { margin: 0; }
-.charts figcaption { color: var(--muted); font-size: 13px; margin-bottom: 6px; }
-.charts canvas {
-  display: block; width: 100%;
-  border-radius: var(--radius);
-  border: 1px solid var(--line);
-  background: rgba(0, 0, 0, 0.25);
-}
-
-/* The heights live in CSS, and they have to.
-   Each canvas is told `width: 100%`, and if its height is left to the height
-   attribute then the box's own aspect ratio decides how tall it renders — which
-   feeds straight back into the drawing code, because the first thing every chart
-   does is read `clientHeight` and set the backing store from it. The measured
-   result was a 110-pixel canvas rendering 247 pixels tall, and a third of every
-   panel empty underneath the bars. Fixing the height in CSS breaks the loop. */
-#lossChart, #accChart { height: 130px; }
-#askBars { height: 110px; }
-#predictBars { height: 120px; }
-#predictPreview, #predictMaps, #filterChart { height: 170px; }
-#confusionChart, #balanceChart { height: 190px; }
-
-.ask-body canvas,
-.verdict canvas {
-  display: block; width: 100%;
-  border-radius: var(--radius); border: 1px solid var(--line);
-  background: rgba(0, 0, 0, 0.25);
-}
-
-/* ---------- the ask panel ---------- */
-
-.ask {
-  display: grid; gap: 18px;
-  grid-template-columns: minmax(180px, 260px) 1fr;
-  align-items: start;
-}
-@media (max-width: 720px) { .ask { grid-template-columns: 1fr; } }
-
-.ask-figure { display: grid; gap: 8px; }
-.ask-figure img {
-  width: 100%; aspect-ratio: 1; object-fit: contain;
-  border-radius: var(--radius); border: 1px solid var(--line);
-  background: rgba(0, 0, 0, 0.4);
-}
-.ask-caption { margin: 0; color: var(--muted); font-size: 13px; }
-.ask-progress { margin: 0 0 8px; color: var(--muted); font-size: 13px; }
-.ask-body canvas {
-  display: block; width: 100%;
-  border-radius: var(--radius); border: 1px solid var(--line);
-  background: rgba(0, 0, 0, 0.25);
-}
-.ask-buttons { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
-.ask-buttons .btn { font-size: 14px; }
-.ask-body input[type="text"] {
-  flex: 1 1 180px; padding: 8px 10px; font: inherit; font-size: 14px;
-  color: var(--text); background: var(--surface-2);
-  border: 1px solid var(--line); border-radius: 10px;
-}
-
-/* ---------- the verdict ---------- */
-
-.verdict {
-  display: grid; gap: 18px; margin: 16px 0 20px;
-  grid-template-columns: minmax(180px, 300px) 1fr;
-  align-items: center;
-}
-@media (max-width: 720px) { .verdict { grid-template-columns: 1fr; } }
-.verdict-main { display: grid; gap: 2px; }
-.verdict-label { color: var(--muted); font-size: 13px; }
-.verdict-main b { font-size: 30px; letter-spacing: -0.4px; }
-.verdict-conf { color: var(--accent); font-size: 14px; font-variant-numeric: tabular-nums; }
-.verdict canvas {
-  display: block; width: 100%;
-  border-radius: var(--radius); border: 1px solid var(--line);
-  background: rgba(0, 0, 0, 0.25);
-}
 
 /* ---------- footer + toast ---------- */
 
-/* rag's footer: the rule spans the window, the lines are centred, and there is no
-   top margin — main's 60px bottom padding is what separates it from the last card.
-   The items are stacked rather than run across as one row, which is how rag's
-   reads: links on one centred line, the copy under it. */
 .foot {
   border-top: 1px solid var(--line);
   padding: 26px 20px 40px;
@@ -369,15 +257,24 @@ h2 { font-size: clamp(20px, 3vw, 26px); margin: 0 0 6px; letter-spacing: -0.2px;
   text-align: center;
 }
 .foot b { color: var(--text); }
-.foot a { color: var(--muted); text-decoration: none; }
-.foot a:hover { color: var(--text); }
 
 .toast {
   position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%);
   z-index: 40; max-width: min(560px, 92vw);
-  padding: 11px 15px; border-radius: 12px;
+  padding: 12px 16px; border-radius: 12px;
   border: 1px solid var(--border-strong);
   background: rgba(27, 16, 44, 0.96);
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.45);
-  font-size: 14px;
+  font-size: 14.5px;
+}
+
+/* ---------- narrow ---------- */
+
+@media (max-width: 720px) {
+  .stage { grid-template-columns: 1fr; gap: 18px; padding: 18px; }
+  .pic { max-width: 260px; margin: 0 auto; width: 100%; }
+  main { padding: 24px 16px 50px; }
+  .card { padding: 18px; }
+  .more > *:not(summary) { margin-left: 18px; margin-right: 18px; }
+  .more > summary { padding: 16px 18px; }
 }

@@ -1,26 +1,29 @@
 /**
- * app.ts — the page.
+ * app.ts — the simple version.
  *
- * One rule runs through all of it: the images never leave. There is no fetch in
- * this file, no analytics, and no server to send anything to. Everything below
- * talks to IndexedDB on this machine and to a Web Worker in this tab.
+ * One picture at a time, and one question at a time. The whole loop is:
  *
- * The loop the page exists to show is the one in section 3. The model looks at
- * every image it has no label for, guesses, and hands the visitor the ones it is
- * least sure about — worst first. The answer becomes training data, the model is
- * retrained, and the queue gets shorter and harder.
+ *   show a picture  →  it guesses  →  you say what it is  →  it studies  →  again
+ *
+ * There is no Train button and no numbers to set on the front of the page. It
+ * studies by itself after every answer, because the person this is for should
+ * not have to know what a learning rate is to teach it something. The numbers
+ * still exist, behind the "More detail" door, for whoever wants them.
+ *
+ * The engine underneath (net.ts, image.ts, store.ts) is unchanged from the
+ * detailed version — only this shell is different.
  */
 
 import { Cnn } from './net.js';
-import { decodeFile, paintSample } from './image.js';
+import { decodeFile } from './image.js';
 import { makeSampleSet } from './samples.js';
 import { VisionTrainer } from './trainer-host.js';
 import * as store from './store.js';
-import { drawBars, drawHeatmap, drawLine, drawTiles } from './charts.js';
-import type { EpochMetric, HostMessage, HostRequest, ModelFile, Prediction, Sample, TrainSample } from './types.js';
+import { drawHeatmap, drawLine, drawTiles } from './charts.js';
+import type { EpochMetric, HostMessage, HostRequest, ModelFile, Sample, TrainSample } from './types.js';
 
 /* ------------------------------------------------------------------ *
- * Small helpers
+ * Helpers
  * ------------------------------------------------------------------ */
 
 function element<T extends HTMLElement>(id: string): T {
@@ -34,93 +37,83 @@ function newId(): string {
   return `s-${Math.random().toString(36).slice(2)}-${Date.now().toString(36)}`;
 }
 
-/** One colour per class, stable by index, used in every chart at once. */
-function classColor(index: number): string {
-  return `hsl(${(265 + index * 47) % 360} 78% 68%)`;
+/** "a cat" · "a cat and Sarah" · "a cat, Sarah and Bob" */
+function listWords(names: string[]): string {
+  if (names.length === 0) return 'nothing yet';
+  if (names.length === 1) return names[0];
+  return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+}
+
+function plural(count: number, one: string, many: string): string {
+  return count === 1 ? one : many;
+}
+
+/** Only reuse weights when the list of names has merely grown. */
+function startsWith(prefix: string[], full: string[]): boolean {
+  if (prefix.length > full.length) return false;
+  for (let i = 0; i < prefix.length; i++) if (prefix[i] !== full[i]) return false;
+  return true;
 }
 
 /* ------------------------------------------------------------------ *
  * State
  * ------------------------------------------------------------------ */
 
+type Stage = 'start' | 'asking' | 'ready';
+
 const state = {
   samples: [] as Sample[],
-  /** The vocabulary the UI offers — only ever grows, so indices never shift. */
-  classes: [] as string[],
+  /** The names it knows. Only ever grows, so a name never changes meaning. */
+  names: [] as string[],
   model: null as Cnn | null,
   file: null as ModelFile | null,
   history: [] as EpochMetric[],
-  predictions: new Map<string, Prediction>(),
-  queue: [] as string[],
-  askIndex: 0,
-  training: false,
-  selected: null as string | null,
-  threshold: 0.6,
-  verdict: null as { name: string; probs: Float32Array } | null,
-  /** The picture dropped into section 4, kept only long enough to draw it. */
-  probe: null as Sample | null,
-  /** The weights we handed the worker for the run in flight, for the charts. */
-  pending: null as ModelFile | null,
-  /** How many epochs that run was asked for, so the status line can count up. */
-  planned: 0,
+  /** The picture on the stage right now — not saved until it is named. */
+  current: null as Sample | null,
+  guess: null as { name: string; sure: number } | null,
+  stage: 'start' as Stage,
+  /** The weights handed to the worker for the run in flight. */
+  approved: null as ModelFile | null,
+  sure: 0.55,
+  passes: 60,
+  /** A safety net only. The run is background work, so it is not there to make
+      anybody wait — it stops a runaway on a very large set of pictures. */
+  budgetMs: 45000,
+  /** The pass count for the run in flight, and how far through it is. */
+  plannedPasses: 60,
+  currentPass: 0,
+  studying: false,
+  /** An answer arrived while a run was going; take it up when that run ends. */
+  needsStudy: false,
+  augment: true,
+  seed: 1,
 };
 
 const el = {
-  drop: element<HTMLDivElement>('drop'),
-  fileInput: element<HTMLInputElement>('fileInput'),
-  pickBtn: element<HTMLButtonElement>('pickBtn'),
-  sampleBtn: element<HTMLButtonElement>('sampleBtn'),
-  clearBtn: element<HTMLButtonElement>('clearBtn'),
-  imageCount: element<HTMLElement>('imageCount'),
-  labelledCount: element<HTMLElement>('labelledCount'),
-  classCount: element<HTMLElement>('classCount'),
-  gridHint: element<HTMLElement>('gridHint'),
-  grid: element<HTMLDivElement>('grid'),
-
-  epochs: element<HTMLInputElement>('epochs'),
-  lr: element<HTMLInputElement>('lr'),
-  threshold: element<HTMLInputElement>('threshold'),
+  picture: element<HTMLImageElement>('picture'),
+  picEmpty: element<HTMLDivElement>('picEmpty'),
+  says: element<HTMLElement>('says'),
+  sub: element<HTMLElement>('sub'),
+  answers: element<HTMLDivElement>('answers'),
+  newThing: element<HTMLDivElement>('newThing'),
+  newName: element<HTMLInputElement>('newName'),
+  newBtn: element<HTMLButtonElement>('newBtn'),
+  controls: element<HTMLDivElement>('controls'),
+  progress: element<HTMLElement>('progress'),
+  studying: element<HTMLElement>('studying'),
+  confusedChart: element<HTMLCanvasElement>('confusedChart'),
+  rightChart: element<HTMLCanvasElement>('rightChart'),
+  mixChart: element<HTMLCanvasElement>('mixChart'),
+  filtersChart: element<HTMLCanvasElement>('filtersChart'),
+  mapsChart: element<HTMLCanvasElement>('mapsChart'),
+  passes: element<HTMLInputElement>('passes'),
+  sureInput: element<HTMLInputElement>('sure'),
   augment: element<HTMLInputElement>('augment'),
-  trainBtn: element<HTMLButtonElement>('trainBtn'),
-  stopBtn: element<HTMLButtonElement>('stopBtn'),
-  resetBtn: element<HTMLButtonElement>('resetBtn'),
-  status: element<HTMLElement>('statusMsg'),
-  kpiParams: element<HTMLElement>('kpiParams'),
-  kpiEpochs: element<HTMLElement>('kpiEpochs'),
-  kpiLoss: element<HTMLElement>('kpiLoss'),
-  kpiValAcc: element<HTMLElement>('kpiValAcc'),
-  kpiConf: element<HTMLElement>('kpiConf'),
-  lossChart: element<HTMLCanvasElement>('lossChart'),
-  accChart: element<HTMLCanvasElement>('accChart'),
-
-  askPanel: element<HTMLDivElement>('askPanel'),
-  askImage: element<HTMLImageElement>('askImage'),
-  askCaption: element<HTMLElement>('askCaption'),
-  askProgress: element<HTMLElement>('askProgress'),
-  askBars: element<HTMLCanvasElement>('askBars'),
-  askButtons: element<HTMLDivElement>('askButtons'),
-  askNewInput: element<HTMLInputElement>('askNewInput'),
-  askNewBtn: element<HTMLButtonElement>('askNewBtn'),
-  askSkipBtn: element<HTMLButtonElement>('askSkipBtn'),
-  acceptBtn: element<HTMLButtonElement>('acceptBtn'),
-
-  predictDrop: element<HTMLDivElement>('predictDrop'),
-  predictInput: element<HTMLInputElement>('predictInput'),
-  predictLabel: element<HTMLElement>('predictLabel'),
-  predictConfidence: element<HTMLElement>('predictConfidence'),
-  predictBars: element<HTMLCanvasElement>('predictBars'),
-  predictPreview: element<HTMLCanvasElement>('predictPreview'),
-  predictMaps: element<HTMLCanvasElement>('predictMaps'),
-  filterChart: element<HTMLCanvasElement>('filterChart'),
-
+  card: element<HTMLElement>('card'),
   saveBtn: element<HTMLButtonElement>('saveBtn'),
   loadBtn: element<HTMLButtonElement>('loadBtn'),
   loadInput: element<HTMLInputElement>('loadInput'),
-  deleteBtn: element<HTMLButtonElement>('deleteBtn'),
-  modelCard: element<HTMLElement>('modelCard'),
-  confusionChart: element<HTMLCanvasElement>('confusionChart'),
-  balanceChart: element<HTMLCanvasElement>('balanceChart'),
-
+  forgetBtn: element<HTMLButtonElement>('forgetBtn'),
   toast: element<HTMLDivElement>('toast'),
 };
 
@@ -143,7 +136,7 @@ function send(request: HostRequest): void {
 }
 
 /* ------------------------------------------------------------------ *
- * Chatting to the visitor
+ * Chatting to the person
  * ------------------------------------------------------------------ */
 
 let toastTimer = 0;
@@ -157,896 +150,183 @@ function toast(message: string): void {
   }, 4200);
 }
 
-function setStatus(message: string, kind: '' | 'good' | 'warn' = ''): void {
-  el.status.textContent = message;
-  el.status.className = `status${kind ? ` ${kind}` : ''}`;
+/**
+ * The big line. Built from text nodes rather than markup, because the names come
+ * from the person typing and a name is not a place to put HTML.
+ */
+function say(lead: string, strong?: string, tail?: string): void {
+  el.says.textContent = '';
+  el.says.append(lead);
+  if (strong !== undefined) {
+    const bold = document.createElement('b');
+    bold.textContent = strong;
+    el.says.append(bold);
+    if (tail) el.says.append(tail);
+  }
+}
+
+function but(text: string, kind: '' | 'primary' | 'ghost' | 'danger' | 'guess', onClick: () => void): HTMLButtonElement {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = `btn${kind ? ` ${kind}` : ''}`;
+  button.textContent = text;
+  button.addEventListener('click', onClick);
+  return button;
 }
 
 /* ------------------------------------------------------------------ *
- * Images
+ * What it knows
  * ------------------------------------------------------------------ */
 
-async function addFiles(files: ArrayLike<File>): Promise<void> {
-  const list = Array.from(files).filter((f) => f.type.startsWith('image/'));
-  if (list.length === 0) {
-    toast('Those were not image files.');
-    return;
-  }
-  setStatus(`Reading ${list.length} image${list.length === 1 ? '' : 's'}…`);
-
-  const added: Sample[] = [];
-  let failed = 0;
-  for (const file of list) {
-    try {
-      const decoded = await decodeFile(file);
-      added.push({
-        id: newId(),
-        label: null,
-        thumb: decoded.thumb,
-        pixels: decoded.pixels,
-        name: file.name,
-        addedAt: new Date().toISOString(),
-        origin: 'file',
-      });
-    } catch {
-      failed += 1;
-    }
-  }
-
-  if (added.length === 0) {
-    setStatus('None of those could be read as images.', 'warn');
-    return;
-  }
-
-  state.samples.push(...added);
-  await store.putSamples(added);
-  learnClasses();
-  predictFor(added);
-  refresh();
-  setStatus(
-    `Added ${added.length} image${added.length === 1 ? '' : 's'}${failed ? `, ${failed} unreadable` : ''}. ` +
-      'Give the ones you recognise a name, then press Train.',
-  );
+function namedSamples(): Sample[] {
+  return state.samples.filter((s) => s.label !== null);
 }
 
-function addSampleSet(): void {
-  const drawn = makeSampleSet(30, 7);
-  // Most of the drawn set arrives labelled, because that is what a set you
-  // gathered would look like — but a dozen are held back on purpose, so the
-  // queue in section 3 has something real to ask about on the first run.
-  const heldBack = new Set<number>();
-  const perClass = new Map<string, number[]>();
-  drawn.forEach((item, index) => {
-    const list = perClass.get(item.label) ?? [];
-    list.push(index);
-    perClass.set(item.label, list);
-  });
-  for (const list of perClass.values()) {
-    for (let i = 0; i < Math.min(4, list.length); i++) heldBack.add(list[i]);
-  }
-
-  const added: Sample[] = drawn.map((item, index) => ({
-    id: newId(),
-    label: heldBack.has(index) ? null : item.label,
-    thumb: item.thumb,
-    pixels: item.pixels,
-    name: item.name,
-    addedAt: new Date().toISOString(),
-    origin: 'sample' as const,
-  }));
-
-  state.samples.push(...added);
-  void store.putSamples(added);
-  learnClasses();
-  predictFor(added);
-  refresh();
-  setStatus(
-    'Drew 90 pictures — three shapes, thirty each, in random colours and positions. ' +
-      'Twelve were left unnamed deliberately, so the queue below has work to do.',
-    'good',
-  );
+/** The names that actually have a picture behind them — the ones worth guessing. */
+function knownNames(): string[] {
+  const named = namedSamples();
+  return state.names.filter((name) => named.some((s) => s.label === name));
 }
 
-function removeSample(id: string): void {
-  state.samples = state.samples.filter((s) => s.id !== id);
-  if (state.selected === id) state.selected = null;
-  state.predictions.delete(id);
-  void store.deleteSample(id);
-  refresh();
-}
-
-async function removeAll(): Promise<void> {
-  state.samples = [];
-  state.selected = null;
-  state.probe = null;
-  await store.clearSamples();
-  refresh();
-  setStatus('All images removed. The model is untouched — use “Forget everything” to clear that too.');
-}
-
-function setLabel(id: string, label: string | null): void {
-  const sample = state.samples.find((s) => s.id === id);
-  if (!sample) return;
-  sample.label = label;
-  if (label && !state.classes.includes(label)) state.classes.push(label);
-  state.probe = null;
-  void store.putSample(sample);
-  refresh();
-}
-
-/**
- * Adopt every name the images already carry into the class vocabulary.
- *
- * This has to run after anything that adds named pictures. It was missing at
- * first, and the symptom was quiet rather than loud: the counters read zero
- * classes with seventy-eight images named, and the teach panel drew its buttons
- * from an empty list — so the one loop the page exists for had nothing to press.
- * The vocabulary only ever grows, so an index never has to move.
- */
-function learnClasses(): void {
+function learnNames(): void {
   for (const sample of state.samples) {
-    if (sample.label && !state.classes.includes(sample.label)) state.classes.push(sample.label);
+    if (sample.label && !state.names.includes(sample.label)) state.names.push(sample.label);
   }
 }
 
-/* ------------------------------------------------------------------ *
- * Predicting
- * ------------------------------------------------------------------ */
-
-function confidenceOf(id: string): number {
-  return state.predictions.get(id)?.confidence ?? 0;
-}
-
-/**
- * Run the model over a set of images. It is deliberately given only what
- * changed — the pictures just added, or everything after a training run —
- * because a forward pass each is not free, and re-running ninety of them
- * because one label changed is how a page starts to feel slow for no reason.
- */
-function predictFor(samples: Sample[]): void {
+function guessFor(sample: Sample): { name: string; sure: number } | null {
   const model = state.model;
   const classes = state.file?.classes ?? [];
-  if (!model || classes.length === 0) return;
-
-  for (const sample of samples) {
-    const probs = model.predict(sample.pixels);
-    let best = 0;
-    for (let j = 1; j < classes.length; j++) if (probs[j] > probs[best]) best = j;
-    state.predictions.set(sample.id, {
-      id: sample.id,
-      probs,
-      topIndex: best,
-      topClass: classes[best] ?? '?',
-      confidence: probs[best] ?? 0,
-      unsure: (probs[best] ?? 0) < state.threshold,
-    });
-  }
-}
-
-/** Moving the threshold changes what counts as “not sure”, not what it thinks. */
-function rethreshold(): void {
-  for (const prediction of state.predictions.values()) {
-    prediction.unsure = prediction.confidence < state.threshold;
-  }
-}
-
-/**
- * The queue is the point of the page: everything with no name, least confident
- * first. An image the model has never been trained on scores zero and goes
- * straight to the front, which is exactly right.
- */
-function rebuildQueue(): void {
-  const unnamed = state.samples.filter((s) => s.label === null);
-  unnamed.sort((a, b) => confidenceOf(a.id) - confidenceOf(b.id));
-  state.queue = unnamed.map((s) => s.id);
-  if (state.askIndex >= state.queue.length) state.askIndex = 0;
-}
-
-/* ------------------------------------------------------------------ *
- * Training
- * ------------------------------------------------------------------ */
-
-function trainClasses(): string[] {
-  const labelled = state.samples.filter((s) => s.label !== null);
-  return state.classes.filter((c) => labelled.some((s) => s.label === c));
-}
-
-function startsWith(prefix: string[], full: string[]): boolean {
-  if (prefix.length > full.length) return false;
-  for (let i = 0; i < prefix.length; i++) if (prefix[i] !== full[i]) return false;
-  return true;
-}
-
-/**
- * What the page has, and what it still needs — in that order.
- *
- * The first version of this only ever spoke when Train was pressed, and only
- * about what was missing: four pictures loaded and the line read “it has 0
- * classes and 0 named images”, which reads as though the upload failed. It also
- * went stale the moment a name was given, because nothing recomputed it. So the
- * inventory comes first, the next step is specific, and `refresh` keeps it
- * current rather than waiting to be asked.
- */
-function readiness(): string {
-  const images = state.samples.length;
-  const named = state.samples.filter((s) => s.label !== null).length;
-  const classes = trainClasses();
-
-  if (images === 0) {
-    return 'No images yet. Add some above, or press “Draw a sample set”.';
-  }
-  if (named === 0) {
-    return (
-      `${images} image${images === 1 ? '' : 's'} loaded, none named yet — so there is nothing to learn from. ` +
-      'Name them in the grid, or answer the questions in step 3.'
-    );
-  }
-  if (classes.length < 2) {
-    return (
-      `${named} of ${images} named, but all as “${classes[0] ?? ''}”. One class cannot be told apart from ` +
-      'anything — it needs a second: a few pictures of something else (another person, or things that are ' +
-      'not this one), named the same way.'
-    );
-  }
-  if (named < 4) {
-    return (
-      `${named} named across ${classes.length} classes (${classes.join(', ')}) — four named pictures is the ` +
-      'least worth training on, and two of each class is better.'
-    );
-  }
-
-  const counts = new Map<string, number>();
-  for (const sample of state.samples) {
-    if (sample.label) counts.set(sample.label, (counts.get(sample.label) ?? 0) + 1);
-  }
-  const thin = classes.filter((name) => (counts.get(name) ?? 0) < 2);
-  if (thin.length > 0) {
-    return (
-      `${images} images across ${classes.length} classes, but ${thin.map((n) => `“${n}”`).join(' and ')} ` +
-      `${thin.length === 1 ? 'has' : 'have'} fewer than two pictures. Two each is the minimum.`
-    );
-  }
-
-  return `Ready — ${named} named images across ${classes.length} classes (${classes.join(', ')}).`;
-}
-
-function startTraining(): void {
-  if (state.training) return;
-
-  const labelled = state.samples.filter((s) => s.label !== null);
-  const classes = trainClasses();
-
-  if (labelled.length < 4 || classes.length < 2) {
-    setStatus(readiness(), 'warn');
-    return;
-  }
-
-  const samples: TrainSample[] = labelled.map((s) => ({
-    id: s.id,
-    classIndex: classes.indexOf(s.label as string),
-    pixels: s.pixels,
-  }));
-
-  // Reuse the weights only when the class list has merely grown. If a class was
-  // dropped from the middle, the output rows no longer mean what they meant, and
-  // continuing would be training on a mislabelled model.
-  const previous = state.file && startsWith(state.file.classes, classes) ? state.file : null;
-  if (state.file && !previous) {
-    setStatus('The classes changed order, so this run starts from fresh weights.', 'warn');
-  }
-  state.pending = previous;
-
-  state.training = true;
-  el.trainBtn.disabled = true;
-  el.stopBtn.disabled = false;
-  el.resetBtn.disabled = true;
-  setStatus(`Training on ${samples.length} images across ${classes.length} classes…`);
-
-  send({
-    type: 'train',
-    payload: {
-      samples,
-      classes,
-      weights: previous,
-      epochs: Math.max(1, Math.min(400, Number(el.epochs.value) || 25)),
-      learningRate: Math.max(0.0001, Math.min(0.2, Number(el.lr.value) || 0.004)),
-      validationSplit: 0.2,
-      augment: el.augment.checked,
-      seed: 20260919,
-    },
-  });
-}
-
-function stopTraining(): void {
-  if (!state.training) return;
-  send({ type: 'stop' });
-  setStatus('Stopping — the weights are kept as they stand.');
-}
-
-function resetWeights(): void {
-  state.model = null;
-  state.file = null;
-  state.history = [];
-  state.predictions.clear();
-  void store.clearModel();
-  refresh();
-  setStatus('The weights are gone. Your images and their names are still here.', 'warn');
-}
-
-function adopt(file: ModelFile): void {
-  state.file = file;
-  state.history = file.meta.history.slice();
-  for (const name of file.classes) if (!state.classes.includes(name)) state.classes.push(name);
-  try {
-    state.model = Cnn.load(file);
-  } catch (error) {
-    state.model = null;
-    setStatus(error instanceof Error ? error.message : 'That model could not be loaded.', 'warn');
-  }
-  void store.saveModel(file);
-  predictFor(state.samples);
-  refresh();
-}
-
-function handleMessage(message: HostMessage): void {
-  switch (message.type) {
-    case 'started':
-      state.history = state.pending ? state.pending.meta.history.slice() : [];
-      state.planned = message.epochs;
-      el.kpiParams.textContent = message.parameters.toLocaleString();
-      renderCharts();
-      return;
-
-    case 'progress':
-      state.history.push(message.metric);
-      el.kpiEpochs.textContent = String(state.history.length);
-      el.kpiLoss.textContent = message.metric.loss.toFixed(3);
-      el.kpiValAcc.textContent = `${Math.round(message.metric.valAccuracy * 100)}%`;
-      setStatus(
-        `Epoch ${message.metric.epoch} of ${state.planned} — loss ${message.metric.loss.toFixed(3)}, ` +
-          `right ${Math.round(message.metric.trainAccuracy * 100)}% of the time, ` +
-          `${Math.round(message.metric.valAccuracy * 100)}% on the held-back images.`,
-      );
-      renderCharts();
-      return;
-
-    case 'done':
-    case 'stopped':
-      state.training = false;
-      el.trainBtn.disabled = false;
-      el.stopBtn.disabled = true;
-      el.resetBtn.disabled = false;
-      adopt(message.weights);
-      state.pending = null;
-      setStatus(
-        `${message.type === 'done' ? 'Trained' : 'Stopped'} at epoch ${message.weights.meta.epochsTrained} — ` +
-          `loss ${message.metric.loss.toFixed(3)}, ${Math.round(message.metric.valAccuracy * 100)}% on the held-back images. ` +
-          (state.queue.length > 0
-            ? `${state.queue.length} image${state.queue.length === 1 ? '' : 's'} still have no name — the queue below is ordered worst-first.`
-            : 'Every image has a name now.'),
-        'good',
-      );
-      return;
-
-    case 'error':
-      state.training = false;
-      el.trainBtn.disabled = false;
-      el.stopBtn.disabled = true;
-      el.resetBtn.disabled = false;
-      setStatus(message.message, 'warn');
-      return;
-  }
-}
-
-/* ------------------------------------------------------------------ *
- * Rendering
- * ------------------------------------------------------------------ */
-
-function refresh(): void {
-  rebuildQueue();
-  renderCounters();
-  renderGrid();
-  renderAsk();
-  renderKpis();
-  renderCharts();
-  renderModelCard();
-  renderVerdict();
-  renderInspection();
-  // Kept current rather than only spoken on demand. Silenced while training so it
-  // cannot talk over the epoch count.
-  if (!state.training) setStatus(readiness());
-}
-
-function renderCounters(): void {
-  const labelled = state.samples.filter((s) => s.label !== null).length;
-  el.imageCount.textContent = String(state.samples.length);
-  el.labelledCount.textContent = String(labelled);
-  el.classCount.textContent = String(trainClasses().length);
-  el.gridHint.hidden = state.samples.length > 0;
-}
-
-function renderGrid(): void {
-  el.grid.textContent = '';
-  const fragment = document.createDocumentFragment();
-  const classes = state.classes;
-
-  for (const sample of state.samples) {
-    const card = document.createElement('div');
-    card.className = `card${state.selected === sample.id ? ' selected' : ''}`;
-
-    const image = document.createElement('img');
-    image.src = sample.thumb;
-    image.alt = sample.name;
-    image.title = 'Click to inspect what the model sees';
-    image.addEventListener('click', () => {
-      state.selected = sample.id;
-      state.probe = null;
-      renderGrid();
-      renderInspection();
-    });
-    card.appendChild(image);
-
-    const body = document.createElement('div');
-    body.className = 'body';
-
-    const badge = document.createElement('div');
-    badge.className = 'badge';
-    const said = document.createElement('span');
-    const prediction = state.predictions.get(sample.id);
-    if (!prediction) {
-      said.className = 'said none';
-      said.textContent = 'no guess yet';
-    } else {
-      said.className = `said${prediction.unsure ? ' unsure' : ''}`;
-      said.textContent = prediction.unsure
-        ? `not sure (${Math.round(prediction.confidence * 100)}%)`
-        : `${prediction.topClass} ${Math.round(prediction.confidence * 100)}%`;
-    }
-    badge.appendChild(said);
-    body.appendChild(badge);
-
-    const select = document.createElement('select');
-    const blank = document.createElement('option');
-    blank.value = '';
-    blank.textContent = '— name it —';
-    select.appendChild(blank);
-    for (const name of classes) {
-      const option = document.createElement('option');
-      option.value = name;
-      option.textContent = name;
-      select.appendChild(option);
-    }
-    if (sample.label && !classes.includes(sample.label)) {
-      const option = document.createElement('option');
-      option.value = sample.label;
-      option.textContent = sample.label;
-      select.appendChild(option);
-    }
-    select.value = sample.label ?? '';
-    select.addEventListener('change', () => setLabel(sample.id, select.value === '' ? null : select.value));
-    body.appendChild(select);
-
-    card.appendChild(body);
-
-    const kill = document.createElement('button');
-    kill.type = 'button';
-    kill.className = 'kill';
-    kill.textContent = '×';
-    kill.title = 'Remove this image';
-    kill.addEventListener('click', (event) => {
-      event.stopPropagation();
-      removeSample(sample.id);
-    });
-    card.appendChild(kill);
-
-    fragment.appendChild(card);
-  }
-
-  el.grid.appendChild(fragment);
-}
-
-function renderAsk(): void {
-  const currentId = state.queue[state.askIndex];
-  const sample = state.samples.find((s) => s.id === currentId);
-
-  el.askButtons.textContent = '';
-
-  if (!sample) {
-    el.askImage.hidden = true;
-    el.askCaption.textContent =
-      state.samples.length === 0
-        ? 'Add some images and the questions start here.'
-        : 'Every image has a name. Add more, or train again and see if it changes its mind.';
-    el.askProgress.textContent = '';
-    drawBars(el.askBars, [], { emptyTitle: 'No question waiting.', emptyHint: 'Everything is named.' });
-    return;
-  }
-
-  el.askImage.hidden = false;
-  el.askImage.src = sample.thumb;
-
-  const prediction = state.predictions.get(sample.id);
-  if (prediction) {
-    el.askCaption.textContent = `It thinks this is “${prediction.topClass}”, ${Math.round(prediction.confidence * 100)}% sure.`;
-    el.askProgress.textContent =
-      `${state.askIndex + 1} of ${state.queue.length} waiting — ordered least confident first.`;
-    drawBars(
-      el.askBars,
-      state.file?.classes.map((name, index) => ({
-        label: name,
-        value: prediction.probs[index] ?? 0,
-        color: classColor(index),
-        caption: `${Math.round((prediction.probs[index] ?? 0) * 100)}%`,
-      })) ?? [],
-      { max: 1, format: (v) => `${Math.round(v * 100)}%` },
-    );
-  } else {
-    el.askCaption.textContent =
-      state.classes.length === 0
-        ? 'Nothing is named yet, so it has nothing to say. Type a name for what you see below and press “Add class”.'
-        : 'It is not sure about this one yet. What is it?';
-    el.askProgress.textContent = `${state.askIndex + 1} of ${state.queue.length} waiting.`;
-    drawBars(el.askBars, [], { emptyTitle: 'Nothing learned yet.', emptyHint: 'Name a few, then press Train.' });
-  }
-
-  // One button per thing it could be, plus the escape hatch of a new one.
-  state.classes.forEach((name, index) => {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'btn';
-    button.textContent = name;
-    button.style.borderColor = classColor(index);
-    button.addEventListener('click', () => {
-      setLabel(sample.id, name);
-      toast(`Named “${name}”. That is one more picture it can learn from.`);
-    });
-    el.askButtons.appendChild(button);
-  });
-}
-
-function renderKpis(): void {
-  const last = state.history[state.history.length - 1];
-  el.kpiParams.textContent = state.model ? state.model.parameterCount.toLocaleString() : '—';
-  el.kpiEpochs.textContent = String(state.file?.meta.epochsTrained ?? state.history.length);
-  el.kpiLoss.textContent = last ? last.loss.toFixed(3) : '—';
-  el.kpiValAcc.textContent = last ? `${Math.round(last.valAccuracy * 100)}%` : '—';
-  el.kpiConf.textContent = state.file ? `${Math.round(state.file.meta.meanConfidence * 100)}%` : '—';
-}
-
-function renderCharts(): void {
-  const losses = state.history.map((m) => m.loss);
-  const valLosses = state.history.map((m) => m.valLoss);
-  const trainAcc = state.history.map((m) => m.trainAccuracy);
-  const valAcc = state.history.map((m) => m.valAccuracy);
-
-  drawLine(el.lossChart, {
-    series: [
-      { values: losses, color: getComputedStyle(document.body).getPropertyValue('--accent').trim() || '#a78bfa', label: 'training' },
-      { values: valLosses, color: getComputedStyle(document.body).getPropertyValue('--yellow').trim() || '#fbbf24', label: 'held back' },
-    ],
-    emptyTitle: 'The loss curve is drawn here as it trains.',
-    emptyHint: 'Name some images and press Train.',
-  });
-
-  drawLine(el.accChart, {
-    series: [
-      { values: trainAcc, color: getComputedStyle(document.body).getPropertyValue('--accent').trim() || '#a78bfa', label: 'training' },
-      { values: valAcc, color: getComputedStyle(document.body).getPropertyValue('--yellow').trim() || '#fbbf24', label: 'held back' },
-    ],
-    floor: 0,
-    ceil: 1,
-    format: (v) => `${Math.round(v * 100)}%`,
-    emptyTitle: 'Accuracy lands here.',
-    emptyHint: 'One point per epoch, so it needs two.',
-  });
-
-  const balance = trainClasses().map((name, index) => ({
-    label: name,
-    value: state.samples.filter((s) => s.label === name).length,
-    color: classColor(index),
-  }));
-  drawBars(el.balanceChart, balance, {
-    emptyTitle: 'No classes yet.',
-    emptyHint: 'Name a few images and the counts appear.',
-  });
-
-  const matrix = state.file?.meta.confusion ?? [];
-  drawHeatmap(el.confusionChart, matrix, state.file?.classes ?? [], state.file?.classes ?? [], {
-    emptyTitle: 'Nothing classified yet.',
-    emptyHint: 'Train the model and this fills in — rows are the truth, columns are its answer.',
-  });
-
-  renderFilters();
-}
-
-function renderFilters(): void {
-  if (!state.model) {
-    drawTiles(el.filterChart, [], 3, {
-      channels: 3,
-      emptyTitle: 'No kernels yet.',
-      emptyHint: 'These are what the first layer learned to look for.',
-    });
-    return;
-  }
-  const { tiles, max } = state.model.conv1Filters();
-  drawTiles(el.filterChart, tiles, 3, { channels: 3, max, caption: 'red, green and blue are the three colour channels' });
-}
-
-function renderModelCard(): void {
-  if (!state.file) {
-    el.modelCard.textContent = 'No model yet. Trained weights are saved in this browser automatically.';
-    el.modelCard.className = 'status';
-    return;
-  }
-  const meta = state.file.meta;
-  const when = new Date(meta.updatedAt);
-  el.modelCard.className = 'status good';
-  el.modelCard.textContent =
-    `A model of ${meta.parameters.toLocaleString()} numbers, over ${state.file.classes.length} classes ` +
-    `(${state.file.classes.join(', ')}), trained for ${meta.epochsTrained} epochs on ${meta.images} images. ` +
-    `It is ${Math.round(meta.meanConfidence * 100)}% confident on average, and last changed ${when.toLocaleString()}. ` +
-    'Saved in this browser, and downloadable below.';
-}
-
-function renderVerdict(): void {
-  if (!state.verdict) {
-    el.predictLabel.textContent = '—';
-    el.predictConfidence.textContent = '';
-    // An empty state, not three rows of zeros: the prompt is what tells a reader
-    // what the box is for.
-    drawBars(el.predictBars, [], {
-      emptyTitle: 'Drop an image to classify it.',
-      emptyHint: 'The bars fill in with its answer.',
-    });
-    return;
-  }
-  const classes = state.file?.classes ?? [];
+  if (!model || classes.length < 2) return null;
+  const probs = model.predict(sample.pixels);
   let best = 0;
-  for (let j = 1; j < classes.length; j++) if (state.verdict.probs[j] > state.verdict.probs[best]) best = j;
-  const confidence = state.verdict.probs[best] ?? 0;
-  el.predictLabel.textContent = classes[best] ?? '—';
-  el.predictConfidence.textContent =
-    confidence < state.threshold
-      ? `${Math.round(confidence * 100)}% — under your threshold, so it is really saying “I do not know”.`
-      : `${Math.round(confidence * 100)}% sure.`;
-  drawBars(
-    el.predictBars,
-    classes.map((name, index) => ({
-      label: name,
-      value: state.verdict?.probs[index] ?? 0,
-      color: classColor(index),
-      caption: `${Math.round((state.verdict?.probs[index] ?? 0) * 100)}%`,
-    })),
-    { max: 1, format: (v) => `${Math.round(v * 100)}%` },
-  );
-}
-
-/** The two pictures that show what the network actually did with an image. */
-function renderInspection(): void {
-  const chosen = state.selected ?? state.queue[state.askIndex] ?? state.samples[0]?.id ?? null;
-  const sample = state.probe ?? state.samples.find((s) => s.id === chosen) ?? null;
-  if (!sample) {
-    drawTiles(el.predictMaps, [], 48, {
-      channels: 1,
-      emptyTitle: 'Nothing to look at yet.',
-      emptyHint: 'Add an image and this shows what the network noticed.',
-    });
-    return;
-  }
-  paintSample(el.predictPreview, sample.pixels);
-
-  if (!state.model) {
-    drawTiles(el.predictMaps, [], 48, {
-      channels: 1,
-      emptyTitle: 'No activations yet.',
-      emptyHint: 'Train the model and these eight maps fill in.',
-    });
-    return;
-  }
-  const { maps, max } = state.model.featureMaps(sample.pixels);
-  drawTiles(el.predictMaps, maps, 48, { channels: 1, max, caption: 'one map per first-layer kernel, white is a strong response' });
+  for (let j = 1; j < classes.length; j++) if (probs[j] > probs[best]) best = j;
+  return { name: classes[best] ?? '', sure: probs[best] ?? 0 };
 }
 
 /* ------------------------------------------------------------------ *
- * Keeping it, and bringing it back
+ * The stage
  * ------------------------------------------------------------------ */
 
-function downloadModel(): void {
-  if (!state.file) {
-    toast('There is no model to download yet.');
+function render(): void {
+  const named = namedSamples();
+  const names = knownNames();
+  const confident = state.guess !== null && state.guess.sure >= state.sure;
+
+  // Drawn first and unconditionally: it read as a stale line whenever one of the
+  // branches below returned early without refreshing it.
+  renderProgress();
+
+  // The picture.
+  el.picture.hidden = state.current === null;
+  el.picEmpty.hidden = state.current !== null;
+  if (state.current) el.picture.src = state.current.thumb;
+
+  // Everything else is rebuilt, because there is only ever one moment on screen.
+  el.answers.textContent = '';
+  el.controls.textContent = '';
+  el.newThing.hidden = true;
+
+  if (state.stage === 'start') {
+    say('Show me a picture.');
+    el.sub.textContent =
+      names.length < 2
+        ? `I ${named.length === 0 ? "don't know anything yet" : `only know ${listWords(names)} so far`}. ` +
+          'Show me one and tell me what it is, and I will start learning. I need at least two different things before I can tell them apart.'
+        : `I know ${names.length} things — ${listWords(names)} — from ${named.length} ${plural(named.length, 'picture', 'pictures')}. ` +
+          'Show me a picture and I will try to guess what it is.';
+    el.answers.append(but('Choose a picture', 'primary', () => choosePicture()));
+    if (named.length === 0) {
+      el.controls.append(but('No pictures handy? Let it practise on 90 drawn shapes', 'ghost', () => void practise()));
+    }
     return;
   }
-  const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-  const blob = new Blob([JSON.stringify(state.file)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = `vision-demo-model-${stamp}.json`;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
-  toast('Downloaded. Load it back with “Load a model file”.');
-}
 
-async function loadModelFile(file: File): Promise<void> {
-  try {
-    const parsed = JSON.parse(await file.text()) as ModelFile;
-    if (parsed.format !== 'vision-demo-model') throw new Error('That is not a vision-demo model file.');
-    adopt(parsed);
-    setStatus(`Loaded the model from ${file.name}. It knows ${parsed.classes.length} classes and has trained for ${parsed.meta.epochsTrained} epochs.`, 'good');
-  } catch (error) {
-    setStatus(error instanceof Error ? error.message : 'That file could not be read.', 'warn');
-  }
-}
-
-async function forgetEverything(): Promise<void> {
-  await store.clearSamples();
-  await store.clearModel();
-  state.samples = [];
-  state.classes = [];
-  state.model = null;
-  state.file = null;
-  state.history = [];
-  state.predictions.clear();
-  state.queue = [];
-  state.selected = null;
-  state.probe = null;
-  state.verdict = null;
-  refresh();
-  setStatus('Everything is gone — images, names and weights.', 'warn');
-}
-
-/* ------------------------------------------------------------------ *
- * Wiring
- * ------------------------------------------------------------------ */
-
-function wireDropZone(zone: HTMLElement, input: HTMLInputElement, onFiles: (files: ArrayLike<File>) => void): void {
-  zone.addEventListener('click', () => input.click());
-  zone.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter' || event.key === ' ') {
-      event.preventDefault();
-      input.click();
-    }
-  });
-  input.addEventListener('change', () => {
-    if (input.files && input.files.length > 0) onFiles(input.files);
-    input.value = '';
-  });
-  for (const type of ['dragenter', 'dragover'] as const) {
-    zone.addEventListener(type, (event) => {
-      event.preventDefault();
-      zone.classList.add('over');
-    });
-  }
-  for (const type of ['dragleave', 'drop'] as const) {
-    zone.addEventListener(type, (event) => {
-      event.preventDefault();
-      zone.classList.remove('over');
-    });
-  }
-  zone.addEventListener('drop', (event) => {
-    const files = (event as DragEvent).dataTransfer?.files;
-    if (files && files.length > 0) onFiles(files);
-  });
-}
-
-async function boot(): Promise<void> {
-  wireDropZone(el.drop, el.fileInput, (files) => void addFiles(files));
-  wireDropZone(el.predictDrop, el.predictInput, (files) => void classifyOne(files));
-
-  el.pickBtn.addEventListener('click', () => el.fileInput.click());
-  el.sampleBtn.addEventListener('click', () => addSampleSet());
-  el.clearBtn.addEventListener('click', () => void removeAll());
-  el.trainBtn.addEventListener('click', () => startTraining());
-  el.stopBtn.addEventListener('click', () => stopTraining());
-  el.resetBtn.addEventListener('click', () => resetWeights());
-  el.saveBtn.addEventListener('click', () => downloadModel());
-  el.loadBtn.addEventListener('click', () => el.loadInput.click());
-  el.loadInput.addEventListener('change', () => {
-    const file = el.loadInput.files?.[0];
-    if (file) void loadModelFile(file);
-    el.loadInput.value = '';
-  });
-  el.deleteBtn.addEventListener('click', () => void forgetEverything());
-  el.askSkipBtn.addEventListener('click', () => {
-    state.askIndex = (state.askIndex + 1) % Math.max(1, state.queue.length);
-    renderAsk();
-    renderInspection();
-  });
-  el.askNewBtn.addEventListener('click', () => {
-    const name = el.askNewInput.value.trim().toLowerCase();
-    const id = state.queue[state.askIndex];
-    if (!name) {
-      toast('Type a name for the new thing first.');
-      return;
-    }
-    if (!state.classes.includes(name)) state.classes.push(name);
-    el.askNewInput.value = '';
-    if (id) {
-      setLabel(id, name);
-      toast(`Added “${name}” and gave it this picture.`);
-    } else {
-      refresh();
-      toast(`Added “${name}”. Give it a picture or two.`);
-    }
-  });
-  el.acceptBtn.addEventListener('click', () => acceptConfident());
-
-  el.threshold.addEventListener('change', () => {
-    state.threshold = Math.max(0.3, Math.min(0.95, Number(el.threshold.value) || 0.6));
-    el.threshold.value = state.threshold.toFixed(2);
-    void store.saveSetting('threshold', state.threshold);
-    rethreshold();
-    refresh();
-  });
-  for (const field of [el.epochs, el.lr, el.augment] as const) {
-    field.addEventListener('change', () => {
-      void store.saveSetting('training', {
-        epochs: Number(el.epochs.value),
-        lr: Number(el.lr.value),
-        augment: el.augment.checked,
-      });
-    });
+  if (state.stage === 'ready') {
+    say('Thanks — I will remember that.');
+    el.sub.textContent =
+      names.length < 2
+        ? `That was ${names[0] ?? 'a new thing'}. Now show me something different — two things is the least I can tell apart.`
+        : `I have now seen ${named.length} ${plural(named.length, 'picture', 'pictures')} of ${names.length} things. ` +
+          'Show me another and I will try to guess it.';
+    el.answers.append(but('Show me another picture', 'primary', () => another()));
+    return;
   }
 
-  window.addEventListener('resize', () => {
-    renderCharts();
-    renderVerdict();
-    renderInspection();
-  });
-
-  // Come back where you left off: the images, then the model.
-  const [samples, model, threshold, training] = await Promise.all([
-    store.allSamples().catch(() => [] as Sample[]),
-    store.loadModel().catch(() => null),
-    store.loadSetting<number>('threshold', 0.6),
-    store.loadSetting<{ epochs: number; lr: number; augment: boolean }>('training', { epochs: 25, lr: 0.004, augment: true }),
-  ]);
-
-  state.samples = samples;
-  state.threshold = threshold;
-  el.threshold.value = threshold.toFixed(2);
-  el.epochs.value = String(training.epochs ?? 25);
-  el.lr.value = String(training.lr ?? 0.004);
-  el.augment.checked = training.augment !== false;
-  learnClasses();
-
-  if (model) {
-    adopt(model);
-    setStatus(
-      `Picked up where you left off — ${samples.length} images and a model trained for ${model.meta.epochsTrained} epochs, ` +
-        `remembered from this browser.`,
-      'good',
-    );
-  } else if (samples.length > 0) {
-    refresh();
-    setStatus(`${samples.length} images remembered from last time, with no model yet. Press Train.`);
+  // stage === 'asking'
+  if (state.guess && confident) {
+    say('I think this is ', state.guess.name, ' — am I right?');
+    el.sub.textContent = "If I'm wrong, just tap the right name.";
+  } else if (state.guess) {
+    say('I am not sure, but this might be ', state.guess.name, '.');
+    el.sub.textContent = 'What is it really?';
   } else {
-    // No status call here on purpose: `refresh` already states the inventory, and
-    // two sources for one line is how it drifts.
-    refresh();
+    say('I do not know what this is yet.');
+    el.sub.textContent =
+      names.length < 2
+        ? 'Tell me what it is, and show me a second kind of thing too — two is the least I can tell apart.'
+        : 'Tell me what it is, and I will remember it.';
   }
+
+  // Every name it knows, with its own guess marked as the likely one.
+  for (const name of names) {
+    const isGuess = state.guess !== null && state.guess.name === name && confident;
+    el.answers.append(but(isGuess ? `${name} ✓` : name, isGuess ? 'guess' : '', () => void answer(name)));
+  }
+  el.answers.append(but('Something new…', 'ghost', () => showNewName()));
+  el.controls.append(but('Show me a different picture', 'ghost', () => another()));
 }
 
-async function classifyOne(files: ArrayLike<File>): Promise<void> {
-  const file = Array.from(files).find((f) => f.type.startsWith('image/'));
-  if (!file) {
-    toast('That was not an image.');
+function showNewName(): void {
+  el.newThing.hidden = false;
+  el.newName.value = '';
+  el.newName.focus();
+}
+
+function renderProgress(): void {
+  const named = namedSamples();
+  const names = knownNames();
+  if (named.length === 0) {
+    el.progress.textContent = "I haven't seen any pictures yet.";
     return;
   }
-  if (!state.model || !state.file) {
-    toast('Train a model first — then it has something to say.');
-    return;
-  }
+  el.progress.textContent = '';
+  el.progress.append(`I know ${names.length} ${plural(names.length, 'thing', 'things')} — `);
+  const bold = document.createElement('b');
+  bold.textContent = listWords(names);
+  el.progress.append(bold, ` — from ${named.length} ${plural(named.length, 'picture', 'pictures')}.`);
+}
+
+/* ------------------------------------------------------------------ *
+ * The loop
+ * ------------------------------------------------------------------ */
+
+const filePicker = document.createElement('input');
+filePicker.type = 'file';
+filePicker.accept = 'image/*';
+filePicker.addEventListener('change', () => {
+  const file = filePicker.files?.[0];
+  filePicker.value = '';
+  if (file) void showPicture(file);
+});
+
+function choosePicture(): void {
+  filePicker.click();
+}
+
+function another(): void {
+  state.current = null;
+  state.guess = null;
+  state.stage = 'start';
+  render();
+  choosePicture();
+}
+
+async function showPicture(file: File): Promise<void> {
   try {
     const decoded = await decodeFile(file);
-    state.verdict = { name: file.name, probs: state.model.predict(decoded.pixels) };
-    // The dropped picture is shown in the inspection charts without ever joining
-    // the grid: it has no name, and the model must not learn from a picture the
-    // visitor has not decided about.
-    state.probe = {
-      id: 'probe',
+    state.current = {
+      id: newId(),
       label: null,
       thumb: decoded.thumb,
       pixels: decoded.pixels,
@@ -1054,34 +334,398 @@ async function classifyOne(files: ArrayLike<File>): Promise<void> {
       addedAt: new Date().toISOString(),
       origin: 'file',
     };
-    state.selected = null;
-    renderVerdict();
-    renderInspection();
+    state.guess = guessFor(state.current);
+    state.stage = 'asking';
+    render();
   } catch {
-    toast('That image could not be read.');
+    toast('That file could not be read as a picture.');
   }
 }
 
-/** Pseudo-labelling, and it is honest about it: only the confident ones. */
-function acceptConfident(): void {
-  const accepted: string[] = [];
-  for (const sample of state.samples) {
-    if (sample.label !== null) continue;
-    const prediction = state.predictions.get(sample.id);
-    if (!prediction || prediction.confidence < state.threshold) continue;
-    sample.label = prediction.topClass;
-    accepted.push(sample.id);
-  }
-  if (accepted.length === 0) {
-    toast('Nothing is confident enough yet — name a few yourself and train again.');
+async function answer(name: string): Promise<void> {
+  const sample = state.current;
+  const clean = name.trim().toLowerCase();
+  if (!sample || clean === '') return;
+
+  if (!state.names.includes(clean)) state.names.push(clean);
+  sample.label = clean;
+  if (!state.samples.includes(sample)) state.samples.push(sample);
+  await store.putSample(sample);
+
+  state.guess = null;
+  state.stage = 'ready';
+  render();
+  study();
+}
+
+async function practise(): Promise<void> {
+  const drawn = makeSampleSet(30, 7);
+  const added: Sample[] = drawn.map((item) => ({
+    id: newId(),
+    label: item.label,
+    thumb: item.thumb,
+    pixels: item.pixels,
+    name: item.name,
+    addedAt: new Date().toISOString(),
+    origin: 'sample',
+  }));
+  state.samples.push(...added);
+  learnNames();
+  await store.putSamples(added);
+  toast('Drew 90 pictures — circles, squares and triangles — and told it what they are. Watch it learn.');
+  render();
+  study();
+}
+
+/**
+ * Study, in the background.
+ *
+ * This used to block the page on "Studying…". The measurement is blunt about why
+ * that was wrong: 12 passes took 6 seconds and got 6 of 9 on pictures it had
+ * never seen, and 60 passes took 27 seconds and got 8 of 9. Capping the wait is
+ * what left it guessing at chance — and asking somebody to sit through half a
+ * minute after every picture is not a page anyone would use. So it studies on its
+ * own thread, the page never waits, and because each run continues from the last
+ * set of weights the improvement simply accumulates.
+ */
+function study(): void {
+  const named = namedSamples();
+  const names = knownNames();
+
+  // One thing is not a classification problem. The stage explains that instead.
+  if (named.length < 2 || names.length < 2) return;
+
+  // Already studying: remember there is newer work and take it up when this run
+  // ends. Two runs at once would fight over the same weights.
+  if (state.studying) {
+    state.needsStudy = true;
     return;
   }
-  for (const id of accepted) {
-    const sample = state.samples.find((s) => s.id === id);
-    if (sample) void store.putSample(sample);
+
+  const samples: TrainSample[] = named.map((s) => ({
+    id: s.id,
+    classIndex: names.indexOf(s.label as string),
+    pixels: s.pixels,
+  }));
+
+  const previous = state.file && startsWith(state.file.classes, names) ? state.file : null;
+  state.approved = previous;
+  state.seed = (state.seed + 1) >>> 0;
+  state.studying = true;
+  state.currentPass = 0;
+  state.plannedPasses = Math.max(2, Math.min(80, state.passes));
+  renderStudying();
+
+  send({
+    type: 'train',
+    payload: {
+      samples,
+      classes: names,
+      weights: previous,
+      epochs: state.plannedPasses,
+      learningRate: 0.004,
+      validationSplit: 0.2,
+      augment: state.augment,
+      seed: state.seed,
+      budgetMs: state.budgetMs,
+    },
+  });
+}
+
+/** The small line that says it is still working, so the wait is never silent. */
+function renderStudying(): void {
+  if (!state.studying) {
+    el.studying.hidden = true;
+    return;
   }
-  refresh();
-  toast(`Accepted ${accepted.length} of its own guesses, at ${Math.round(state.threshold * 100)}% or better.`);
+  el.studying.hidden = false;
+  el.studying.textContent = state.model
+    ? `Still studying — pass ${state.currentPass} of ${state.plannedPasses}. It keeps getting better while you carry on.`
+    : `Studying the pictures. I will start guessing in a moment — pass ${state.currentPass} of ${state.plannedPasses}.`;
+}
+
+function handleMessage(message: HostMessage): void {
+  switch (message.type) {
+    case 'started':
+      state.history = state.approved ? state.approved.meta.history.slice() : [];
+      renderCurves();
+      return;
+
+    case 'progress':
+      state.currentPass = message.metric.epoch;
+      state.history.push(message.metric);
+      renderStudying();
+      // Only the curves, on purpose. The filter and activation pictures each need a
+      // forward pass through the network, and doing that on every pass would slow
+      // the studying down for a picture nobody is looking at yet.
+      renderCurves();
+      return;
+
+    case 'done':
+    case 'stopped': {
+      adopt(message.weights);
+      state.studying = false;
+      renderStudying();
+      if (state.needsStudy) {
+        state.needsStudy = false;
+        study();
+      } else if (state.stage === 'asking' && state.current && state.current.label === null) {
+        // It got better while the picture sat on the stage — so say what it thinks now.
+        state.guess = guessFor(state.current);
+        render();
+      }
+      return;
+    }
+
+    case 'error':
+      state.studying = false;
+      renderStudying();
+      toast(message.message);
+      return;
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * The model
+ * ------------------------------------------------------------------ */
+
+function adopt(file: ModelFile): void {
+  state.file = file;
+  state.history = file.meta.history.slice();
+  for (const name of file.classes) if (!state.names.includes(name)) state.names.push(name);
+  try {
+    state.model = Cnn.load(file);
+  } catch {
+    state.model = null;
+  }
+  void store.saveModel(file);
+  renderCard();
+  renderCharts();
+}
+
+async function forgetEverything(): Promise<void> {
+  await store.clearSamples();
+  await store.clearModel();
+  state.samples = [];
+  state.names = [];
+  state.model = null;
+  state.file = null;
+  state.history = [];
+  state.current = null;
+  state.guess = null;
+  state.stage = 'start';
+  render();
+  renderCard();
+  renderCharts();
+  toast('It has forgotten everything — the pictures and everything it learned.');
+}
+
+function saveToFile(): void {
+  if (!state.file) {
+    toast('There is nothing to save yet.');
+    return;
+  }
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const blob = new Blob([JSON.stringify(state.file)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `vision-demo-memory-${stamp}.json`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+  toast('Saved. Load it back with "Load a saved memory".');
+}
+
+async function loadFromFile(file: File): Promise<void> {
+  try {
+    const parsed = JSON.parse(await file.text()) as ModelFile;
+    if (parsed.format !== 'vision-demo-model') throw new Error('That is not one of these files.');
+    adopt(parsed);
+    render();
+    toast(`Loaded — it remembers ${parsed.classes.length} things.`);
+  } catch (error) {
+    toast(error instanceof Error ? error.message : 'That file could not be read.');
+  }
+}
+
+function renderCard(): void {
+  if (!state.file) {
+    el.card.textContent = 'Nothing learned yet. It saves itself in this browser as you teach it.';
+    return;
+  }
+  const named = namedSamples();
+  const when = new Date(state.file.meta.updatedAt);
+  el.card.textContent =
+    `It knows ${state.file.classes.length} things (${state.file.classes.join(', ')}) from ${named.length} pictures, ` +
+    `and has studied ${state.file.meta.epochsTrained} times in total. Saved in this browser, and last changed ${when.toLocaleString()}.`;
+}
+
+/* ------------------------------------------------------------------ *
+ * Charts
+ * ------------------------------------------------------------------ */
+
+function renderCharts(): void {
+  renderCurves();
+  renderModelPictures();
+}
+
+/** The two line charts. Cheap, so these can be redrawn on every epoch. */
+function renderCurves(): void {
+  const accent = getComputedStyle(document.body).getPropertyValue('--accent').trim() || '#a78bfa';
+  const yellow = getComputedStyle(document.body).getPropertyValue('--yellow').trim() || '#fbbf24';
+
+  drawLine(el.confusedChart, {
+    series: [
+      { values: state.history.map((m) => m.loss), color: accent, label: 'while studying' },
+      { values: state.history.map((m) => m.valLoss), color: yellow, label: 'on pictures it had not seen' },
+    ],
+    emptyTitle: 'This line is drawn as it studies.',
+    emptyHint: 'Show it a picture and tell it what the picture is.',
+  });
+
+  drawLine(el.rightChart, {
+    series: [
+      { values: state.history.map((m) => m.trainAccuracy), color: accent, label: 'pictures it studied' },
+      { values: state.history.map((m) => m.valAccuracy), color: yellow, label: 'pictures it had not seen' },
+    ],
+    floor: 0,
+    ceil: 1,
+    format: (v) => `${Math.round(v * 100)}%`,
+    emptyTitle: 'This fills in as it studies.',
+    emptyHint: 'It needs at least two kinds of thing first.',
+  });
+}
+
+/** The pictures of what it learned. Each one needs a forward pass, so these are
+    drawn only when the model or the picture on the stage actually changes. */
+function renderModelPictures(): void {
+  drawHeatmap(el.mixChart, state.file?.meta.confusion ?? [], state.file?.classes ?? [], state.file?.classes ?? [], {
+    emptyTitle: 'Nothing to mix up yet.',
+    emptyHint: 'Once it has guessed a few times, this shows where it went wrong.',
+  });
+
+  // Computed once: it is a pass over the first layer's weights, not a free read.
+  const filters = state.model ? state.model.conv1Filters() : null;
+  drawTiles(el.filtersChart, filters ? filters.tiles : [], 3, {
+    channels: 3,
+    max: filters ? filters.max : 1,
+    caption: 'red, green and blue are the three colour channels',
+    emptyTitle: 'Nothing learned yet.',
+    emptyHint: 'These are the little patterns it teaches itself to look for.',
+  });
+
+  renderMaps();
+}
+
+/** The feature maps for whatever is on the stage — or the last picture it saw. */
+function renderMaps(): void {
+  const picture = state.current ?? state.samples[state.samples.length - 1] ?? null;
+  if (!picture) {
+    drawTiles(el.mapsChart, [], 48, {
+      channels: 1,
+      emptyTitle: 'Nothing to look at yet.',
+      emptyHint: 'Show it a picture and this lights up.',
+    });
+    return;
+  }
+  if (!state.model) {
+    drawTiles(el.mapsChart, [], 48, {
+      channels: 1,
+      emptyTitle: 'It has not studied yet.',
+      emptyHint: 'Teach it two kinds of thing and these appear.',
+    });
+    return;
+  }
+  const { maps, max } = state.model.featureMaps(picture.pixels);
+  drawTiles(el.mapsChart, maps, 48, { channels: 1, max, caption: 'white is a strong reaction' });
+}
+
+/* ------------------------------------------------------------------ *
+ * Wiring
+ * ------------------------------------------------------------------ */
+
+async function boot(): Promise<void> {
+  el.newBtn.addEventListener('click', () => {
+    const name = el.newName.value.trim().toLowerCase();
+    if (name === '') {
+      toast('Type a name first.');
+      return;
+    }
+    void answer(name);
+  });
+  el.newName.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') el.newBtn.click();
+  });
+
+  el.saveBtn.addEventListener('click', () => saveToFile());
+  el.loadBtn.addEventListener('click', () => el.loadInput.click());
+  el.loadInput.addEventListener('change', () => {
+    const file = el.loadInput.files?.[0];
+    el.loadInput.value = '';
+    if (file) void loadFromFile(file);
+  });
+  el.forgetBtn.addEventListener('click', () => void forgetEverything());
+
+  el.passes.addEventListener('change', () => {
+    state.passes = Math.max(2, Math.min(80, Number(el.passes.value) || 60));
+    el.passes.value = String(state.passes);
+    void store.saveSetting('passes', state.passes);
+  });
+  el.sureInput.addEventListener('change', () => {
+    state.sure = Math.max(0.3, Math.min(0.95, (Number(el.sureInput.value) || 55) / 100));
+    el.sureInput.value = String(Math.round(state.sure * 100));
+    void store.saveSetting('sure', state.sure);
+    render();
+  });
+  el.augment.addEventListener('change', () => {
+    state.augment = el.augment.checked;
+    void store.saveSetting('augment', state.augment);
+  });
+
+  // A picture dropped anywhere on the window is the same as choosing one.
+  for (const type of ['dragover', 'drop'] as const) {
+    window.addEventListener(type, (event) => event.preventDefault());
+  }
+  window.addEventListener('drop', (event) => {
+    const file = (event as DragEvent).dataTransfer?.files?.[0];
+    if (file && file.type.startsWith('image/')) void showPicture(file);
+  });
+
+  window.addEventListener('resize', () => {
+    renderCharts();
+  });
+
+  // Pick up where they left off.
+  const [samples, model, passes, sure, augment] = await Promise.all([
+    store.allSamples().catch(() => [] as Sample[]),
+    store.loadModel().catch(() => null),
+    store.loadSetting<number>('passes', 60),
+    store.loadSetting<number>('sure', 0.55),
+    store.loadSetting<boolean>('augment', true),
+  ]);
+
+  state.samples = samples;
+  learnNames();
+  state.passes = passes;
+  state.sure = sure;
+  state.augment = augment !== false;
+  el.passes.value = String(passes);
+  el.sureInput.value = String(Math.round(sure * 100));
+  el.augment.checked = state.augment;
+
+  if (model) {
+    adopt(model);
+    state.stage = 'start';
+    render();
+    renderStudying();
+    toast(`Picked up where you left off — it remembers ${model.classes.length} things from ${samples.length} pictures.`);
+    return;
+  }
+
+  render();
+  renderCharts();
 }
 
 void boot();

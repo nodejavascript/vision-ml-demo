@@ -47,6 +47,7 @@ export class VisionTrainer {
   private last: EpochMetric | null = null;
   private stopRequested = false;
   private running = false;
+  private beganAt = 0;
   private channel: MessageChannel | null = null;
 
   constructor(post: (message: HostMessage) => void) {
@@ -72,16 +73,21 @@ export class VisionTrainer {
   start(payload: TrainPayload): void {
     if (this.running) return;
 
-    if (payload.samples.length < 4 || payload.classes.length < 2) {
+    // One picture of each of two things is the honest minimum. It used to demand
+    // four, which quietly broke the moment the page promised somebody they could
+    // start with two — the run returned an error nobody was looking for, no model
+    // was ever built, and every guess after that came back "I do not know".
+    if (payload.samples.length < 2 || payload.classes.length < 2) {
       this.post({
         type: 'error',
-        message: 'Give it at least two things to tell apart, with two images each.',
+        message: 'It needs one picture of two different things before it can tell them apart.',
       });
       return;
     }
 
     this.stopRequested = false;
     this.running = true;
+    this.beganAt = now();
     this.payload = payload;
     this.rng = mulberry32(payload.seed >>> 0);
     this.epoch = 0;
@@ -133,10 +139,17 @@ export class VisionTrainer {
   /** Work for up to SLICE_MS, then hand back. */
   private pump(): void {
     if (!this.running) return;
+    const payload = this.payload;
     const started = now();
     do {
       if (this.stopRequested) {
         this.finish('stopped');
+        return;
+      }
+      // The budget is checked after at least one epoch, so a run with a tiny
+      // budget still learns something rather than returning immediately.
+      if (payload?.budgetMs && this.epoch > 0 && now() - this.beganAt > payload.budgetMs) {
+        this.finish('done');
         return;
       }
       if (!this.runOneEpoch()) return;
