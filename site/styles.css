@@ -26,7 +26,8 @@
 
   --radius: 14px;
   --radius-lg: 22px;
-  --container: 1040px;
+  /* The same column as llm-demo, so the two pages line up side by side. */
+  --container: 940px;
 
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
@@ -346,9 +347,12 @@ h2 { font-size: clamp(20px, 3vw, 26px); margin: 0 0 6px; letter-spacing: -0.2px;
 
 /* ---------- footer + toast ---------- */
 
+/* The rule spans the window and the words stay in the column, which is what
+   llm-demo's footer does. Constraining the element itself would clip the border
+   to the content width and leave the rule floating. */
 .foot {
-  max-width: var(--container); margin: 0 auto;
-  padding: 20px; border-top: 1px solid var(--line);
+  border-top: 1px solid var(--line);
+  padding: 20px max(20px, calc((100% - var(--container)) / 2));
   display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between;
   color: var(--muted); font-size: 13.5px;
 }
