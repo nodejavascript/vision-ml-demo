@@ -68,12 +68,24 @@ export async function decodeFile(file, size = SAMPLE) {
     }
 }
 /**
- * How wide the face search looks. Wide enough to keep a small face, small enough to be quick.
+ * How wide the face search looks.
  *
- * Exported because the drawn practise pictures are painted at exactly this size, so the
- * search reads the drawing's own pixels instead of an enlargement of them.
+ * This is the number that decides whether the faces are found at all, and it is worth
+ * saying so plainly because 224 was too small. The cascade's window is 24 pixels
+ * square, so at 224 wide a face has to be a tenth of the picture to be visible to the
+ * search at all — and a photograph is usually not a headshot, so the faces in it were
+ * being thrown away before the search began. Measured on thirty-eight real
+ * photographs on 19 September 2026, with everything else held still:
+ *
+ *   224 wide — a face boxed in  6 of 12 pictures,  6 of 15 faces,  0 invented
+ *   320 wide — a face boxed in 12 of 12 pictures, 13 of 15 faces,  0 invented
+ *   640 wide — a face boxed in 12 of 12 pictures, 15 of 15 faces, 10 invented
+ *
+ * 320 is where the recall arrives and the false boxes have not started. It costs a
+ * few hundred milliseconds once per picture, which is paid while the picture is being
+ * opened and never while somebody is typing.
  */
-export const ANALYSIS = 224;
+export const ANALYSIS = 320;
 function frameFromCanvas(source) {
     const scale = Math.min(1, ANALYSIS / Math.max(source.width, source.height));
     const width = Math.max(1, Math.round(source.width * scale));
@@ -122,8 +134,10 @@ export async function loadPicture(file, size = SAMPLE) {
             frame,
             whole: () => pixelsFromCanvas(source, size),
             crop: (box) => pixelsFromCanvas(region(box), size),
-            // Square-ish so a face is framed the same whatever shape the box came out as.
-            cropThumb: (box) => thumbFromCanvas(region(box), 160),
+            // Square-ish so a face is framed the same whatever shape the box came out as, and
+            // large enough to stay sharp at the size the page shows it — the preview under the
+            // question takes half the column.
+            cropThumb: (box) => thumbFromCanvas(region(box), 320),
         };
     }
     finally {

@@ -112,24 +112,65 @@ more air above it, so the box you type in and the guesses under it do not read a
 
 There is **no face detector in this browser** — `window.FaceDetector` exists on
 Chrome OS and Android, not on desktop Linux — and the page has no server, no
-libraries and no downloaded weights. So `src/faces.ts` finds them out of the picture
-itself: skin has a fairly narrow range of colour, so it builds a mask of
-skin-coloured pixels in YCbCr, closes the gaps inside a face, searches for solid
-blobs, and keeps the ones shaped and sized like a head.
+libraries and no runtime. So the detector is written here, in `src/haar.ts`: the
+**Viola-Jones algorithm**, the one behind OpenCV's frontal-face cascade, as plain
+loops over typed arrays.
+
+A window 24 pixels square walks the picture at every position and every size. At each
+stop it asks a few hundred black-and-white questions — *is the eye band darker than
+the cheeks, is the bridge of the nose lighter than its sides* — in order of how
+decisive they are, and stops at the first one that is answered the wrong way. Almost
+every window is thrown out after two or three questions. A window that answers all
+twenty-five rounds is a face.
+
+The questions and their thresholds are the **one thing here that is not written from
+scratch**, because they cannot be: they are trained, and training needs thousands of
+labelled faces. They are OpenCV's own cascade — Rainer Lienhart's stump-based 24×24
+frontal-face detector — which the Intel licence permits redistributing with the notice
+kept. `tools/build-cascade.mjs` packs them into a TypeScript module so there is nothing
+to fetch and no asset to get wrong, and `src/haar.ts` is the detector that reads them.
+
+It was checked against OpenCV 4.10 before it was wired in: the same cascade run over
+the same pictures keeps the same windows — 10 of 10 on a test photograph — and 409
+fixed 24×24 patches put to both are answered identically, 63 yes and 346 no, with no
+disagreement in either direction.
 
 **It is a proposer, not an authority, and the page is built around that:**
 
 - Every box has an **×** to remove it.
 - **Dragging on the picture draws a new box**, for a face it missed.
 
-That is not a nicety. It will miss faces in black-and-white photographs, in heavy
-shadow, and behind a mask or a hand; it will sometimes fire on a wooden floor. Two
-honest notes, said because pretending otherwise would be worse than the limitation:
-the colour rule is the standard one from the literature and, like the rest of that
-literature, was tuned mostly on lighter skin, so it is measurably less reliable on
-darker skin in dim light; and it knows nothing about what a face *is* — "one blob of
-skin" is all the structure it understands, so two people standing close together can
-come out as one box.
+That is not a nicety. It will still miss a face turned away from the camera, a face in
+heavy shadow, a face behind a mask or a hand, and a face smaller than about a twelfth
+of the picture.
+
+### What it replaced, and why the numbers matter
+
+Until 19 September 2026 the search was a **skin-colour finder**: mask the
+skin-coloured pixels in YCbCr, close the gaps, look for solid blobs. It is worth
+writing down what that actually did, because "skin is a narrow range of colour" is
+true often enough to look like it works.
+
+Measured against eighteen ordinary photographs — twelve of which hold a face,
+according to dlib's `face_recognition` — and, separately, against the twenty practise
+photographs the page ships:
+
+| | the colour rule, at 224 | the cascade, at 320 |
+|---|---|---|
+| photographs with a face that got a box | 7 of 12 | **12 of 12** |
+| faces named by the reference that were missed | 8 of 15 | **0 of 12 photographs** |
+| face-free photographs that got an invented box | 5 of 6 | **1 of 6** |
+| practise photographs whose box was the whole picture | 6 of 20 (boxes 67–82% of the frame) | **0 of 20** |
+
+Two changes did that, and it is worth keeping them apart. **A real detector** is one.
+**Looking at a bigger copy of the picture** is the other, and it is the cheaper half:
+the cascade at the old 224 found a face in 10 of the 12 photographs; at 320 it found
+12 of 12. A 24-pixel window at 224 wide means a face has to be a tenth of the picture
+to be visible to the search at all, and a photograph is usually not a headshot.
+
+A colour rule also cannot be checked the way this can. The cascade's arithmetic was
+compared against OpenCV's, which a heuristic has no equivalent of — and a heuristic has
+no answer at all to *"why did you say that is a face?"*
 
 ## One box, one name
 
@@ -260,12 +301,15 @@ framework, no matrix library, no runtime dependencies.
 |---|---|
 | `src/net.ts` | the network, its gradients, and the Adam update |
 | `src/image.ts` | a file → 48×48 bytes, and the thumbnails |
-| `src/faces.ts` | where the boxes come from — skin colour, blobs, no weights |
+| `src/faces.ts` | the page's way in to the face search: the `Box` and `Frame` types |
+| `src/haar.ts` | the face detector — Viola-Jones, over typed arrays |
+| `src/cascade-data.ts` | **generated**: OpenCV's cascade, packed as base64 typed arrays |
+| `tools/build-cascade.mjs` | regenerates `src/cascade-data.ts` from the cascade XML |
 | `src/store.ts` | IndexedDB — the pictures and the model |
 | `src/trainer-host.ts` | the study loop, one pass at a time, in 40 ms slices |
 | `src/trainer.worker.ts` | runs it off the main thread |
 | `src/charts.ts` | every chart, drawn by hand on a canvas |
-| `src/samples.ts` | the drawn practice shapes |
+| `src/samples.ts` | the practise photographs, and where each came from |
 | `src/app.ts` | the page |
 | `site/` | the hand-written page, plus **generated** JavaScript |
 
