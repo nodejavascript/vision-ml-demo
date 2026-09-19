@@ -1,0 +1,19 @@
+{
+  "name": "vision-demo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Teach a small convolutional network to recognise your images, in your browser. Prototype.",
+  "engines": {
+    "node": "22"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc && node tools/serve.js 4330",
+    "serve": "node tools/serve.js 4330",
+    "watch": "tsc --watch"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}
