@@ -72,23 +72,26 @@ body {
 
 .top {
   position: sticky; top: 0; z-index: 10;
-  display: flex; flex-wrap: wrap; gap: 10px 18px;
+  display: flex; flex-wrap: wrap; gap: 14px;
   align-items: center; justify-content: space-between;
   padding: 12px 20px;
   background: rgba(8, 5, 13, 0.82);
-  backdrop-filter: blur(10px);
+  backdrop-filter: blur(14px);
   border-bottom: 1px solid var(--line);
 }
 
 .brand { display: inline-flex; align-items: center; gap: 10px; color: var(--text); text-decoration: none; }
 .brand .mark { color: var(--accent); display: inline-flex; }
-.brand b { display: block; font-size: 15px; letter-spacing: 0.2px; }
+/* 1.1 on the name, matching rag, is what keeps the header at 60px. At the inherited
+   1.6 the two brand lines measure 42px instead of 35, and the bar grows to 67 —
+   which in turn pushes every heading on the page 7px lower. */
+.brand b { display: block; font-size: 15px; letter-spacing: 0.2px; line-height: 1.1; }
 .brand small {
   display: block; color: var(--muted); font-size: 11.5px;
   letter-spacing: 0.4px; text-transform: uppercase;
 }
 
-.top nav { display: flex; flex-wrap: wrap; gap: 16px; font-size: 14px; }
+.top nav { display: flex; flex-wrap: wrap; gap: 20px; font-size: 14px; }
 .top nav a { color: var(--muted); text-decoration: none; }
 .top nav a:hover, .top nav a:focus-visible { color: var(--text); }
 
@@ -96,12 +99,15 @@ main { max-width: var(--container); margin: 0 auto; padding: 32px 20px 60px; }
 
 /* ---------- hero ---------- */
 
-.hero { padding: 26px 0 30px; }
+/* rag's hero rhythm: 26px above, 34px below. The bottom figure is not cosmetic —
+   it is the gap the first card does not add for itself, because a panel carries a
+   bottom margin only. */
+.hero { padding-block: 26px 34px; }
 
-h1 { font-size: clamp(30px, 6vw, 46px); line-height: 1.1; margin: 0 0 14px; letter-spacing: -0.5px; }
+h1 { font-size: clamp(30px, 6vw, 46px); line-height: 1.1; margin: 0 0 20px; letter-spacing: -0.5px; }
 h2 { font-size: clamp(20px, 3vw, 26px); margin: 0 0 6px; letter-spacing: -0.2px; }
 
-.lede { font-size: clamp(16px, 2.4vw, 19px); color: #d6cdea; margin: 0 0 22px; max-width: 66ch; }
+.lede { font-size: clamp(16px, 2.4vw, 19px); color: #d6cdea; margin: 0 0 22px; max-width: 62ch; }
 
 .facts { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
 .facts li { position: relative; padding-left: 22px; color: var(--muted); font-size: 14.5px; }
@@ -123,8 +129,12 @@ h2 { font-size: clamp(20px, 3vw, 26px); margin: 0 0 6px; letter-spacing: -0.2px;
 /* ---------- panels ---------- */
 
 .panel {
-  margin: 26px 0;
-  padding: 22px;
+  /* Bottom only, like rag's cards. A top margin stacks onto the hero's own bottom
+     padding, so the gap under the heading becomes the sum of the two and reads as
+     a hole. The footer needs no top margin for the same reason: main's 60px
+     bottom padding already separates the last card from the rule. */
+  margin: 0 0 22px;
+  padding: 24px;
   border-radius: var(--radius-lg);
   border: 1px solid var(--line);
   background: linear-gradient(180deg, rgba(27, 16, 44, 0.72), rgba(14, 8, 23, 0.72));
@@ -347,14 +357,16 @@ h2 { font-size: clamp(20px, 3vw, 26px); margin: 0 0 6px; letter-spacing: -0.2px;
 
 /* ---------- footer + toast ---------- */
 
-/* The rule spans the window and the words stay in the column, which is what
-   llm-demo's footer does. Constraining the element itself would clip the border
-   to the content width and leave the rule floating. */
+/* rag's footer: the rule spans the window, the lines are centred, and there is no
+   top margin — main's 60px bottom padding is what separates it from the last card.
+   The items are stacked rather than run across as one row, which is how rag's
+   reads: links on one centred line, the copy under it. */
 .foot {
   border-top: 1px solid var(--line);
-  padding: 20px max(20px, calc((100% - var(--container)) / 2));
-  display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between;
+  padding: 26px 20px 40px;
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
   color: var(--muted); font-size: 13.5px;
+  text-align: center;
 }
 .foot b { color: var(--text); }
 .foot a { color: var(--muted); text-decoration: none; }
