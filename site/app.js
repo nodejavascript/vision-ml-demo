@@ -429,6 +429,16 @@ function look(sample) {
  * somebody is in the middle of typing.
  */
 let clearedFor = null;
+/**
+ * Whether the run now starting began by wiping the store.
+ *
+ * Set by `practise()` and read once, by the first picture's opening line. The wipe itself
+ * is instant and the line `practise()` writes lasts about a tenth of a second before the
+ * face search finishes and the first picture says what it found — so the news has to
+ * travel on that line, or the person never sees it. A state they cannot see is a state
+ * they cannot trust.
+ */
+let freshStart = false;
 function render() {
     const named = namedSamples();
     const names = knownNames();
@@ -881,10 +891,18 @@ async function nextPhoto() {
     state.skippedBoxes = [];
     await showFace();
     const faces = nextTurn.boxes.length;
+    const cleared = freshStart;
+    freshStart = false;
+    const opening = cleared ? 'Memory cleared — it has forgotten everything from before. ' : '';
     if (faces > 0) {
-        note(faces === 1
-            ? 'Found one face. Name it, or drag a box if it has the wrong one.'
-            : `Found ${faces} faces. They are named one at a time.`);
+        note(opening +
+            (faces === 1
+                ? 'Found one face. Name it, or drag a box if it has the wrong one.'
+                : `Found ${faces} faces. They are named one at a time.`));
+    }
+    else if (cleared) {
+        // Nothing else would be said here, so the wipe speaks on its own.
+        note(opening.trim());
     }
 }
 /** Put the face being asked about on the stage, and ask. */
@@ -1142,17 +1160,27 @@ async function practise() {
     // uploaded them". So nothing is taught on the person's behalf: the pictures queue up,
     // each is opened in turn and searched for faces, and every box is named by hand. What is
     // practised is therefore the real loop, not a shortcut through it.
+    //
+    // And it starts from NOTHING — George, 2026-09-19: *"when i click practise, you should
+    // delete memory"*. It used to add to whatever was already in the store, so a second
+    // practise run queued its pictures behind the first run's and carried a model trained on
+    // names from that run: a name taught five minutes ago answered for a box in this set, and
+    // the chart's heading counted boxes from both. A practise set is a fresh start, pictures
+    // and model both.
+    //
+    // The photographs are fetched FIRST, so a failure to load them leaves what was already
+    // learned alone rather than clearing it for nothing.
     const files = await makeSampleFiles(PRACTISE_COUNT);
     if (files.length === 0) {
         note('The practise photographs would not load.');
         return;
     }
-    note(
-    // The whole set is handed over, so the shuffle is the only randomness in it. Said as
-    // "picked at random" it would read as if some were being held back.
-    `${files.length} photographs queued, shuffled. ` +
-        'The boxes on them are the faces the detector found — the × removes one it got wrong.');
+    await forgetEverything();
     enqueue(files);
+    // Read by the first picture's opening line — see `freshStart`. Set after `enqueue` on
+    // purpose: `enqueue` starts the run without awaiting it, so this is still set before the
+    // line is written.
+    freshStart = true;
 }
 /**
  * The way to the practise set, said the same way wherever the page is at rest.
