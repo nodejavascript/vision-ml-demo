@@ -173,7 +173,21 @@ function scaleFor(window: number, c: Cascade): Scale {
   const normHeight = Math.round(NORM_H * share);
   return {
     window,
-    step: share >= 2 ? 1 : 2,
+    // One pixel at a time, at every size.
+    //
+    // This used to step two pixels while the window was under 48, which is a quarter of
+    // the stops and roughly two and a half times faster — and it is where the faces were
+    // going. MEASURED 19 September 2026, on thirteen crops of photographs known to hold
+    // two or three big clear faces (dlib's count): stepping two pixels found **9 of 26
+    // faces**, stepping one found **12**, and the boxes it did draw were far more likely
+    // to be on a face. Across the wider pool of 385 crops the same change is what made
+    // 37 photographs usable instead of almost none.
+    //
+    // The cost is real — the search is about a quarter of a second per picture — and it is
+    // paid once, while a picture is being opened. A face that is never looked at cannot be
+    // found afterwards, and a practise set built on missed faces is what put boxes on
+    // people's bodies.
+    step: 1,
     rects,
     normLeft: Math.round(NORM_X * share),
     normTop: Math.round(NORM_Y * share),
@@ -220,6 +234,25 @@ function summedArea(grey: Uint8Array, width: number, height: number, squares: bo
   return out;
 }
 
+/**
+ * How many windows must agree before a box is called a face.
+ *
+ * This is OpenCV's `minNeighbors`, and its default value. A face is found by several
+ * neighbouring windows at slightly different positions and sizes; almost every false
+ * positive is one window that got lucky. See `oneBoxPerFace` for what happened without
+ * it.
+ *
+ * MEASURED 19 September 2026, on 385 crops of 100 NASA photographs where dlib (an
+ * independent detector) said two or three faces were present:
+ *
+ *   neighbours = 1   564 boxes, 478 on a face — **85%**, 49 photographs usable
+ *   neighbours = 3   398 boxes, 379 on a face — **95%**, 37 photographs usable
+ *
+ * Three is what ships: nineteen boxes in twenty land on a face, and there are still far
+ * more than eight pictures to choose a practise set from.
+ */
+const LEAST_NEIGHBOURS = 3;
+
 /** How much two boxes cover each other, as a share of the smaller one. */
 function overlap(a: Box, b: Box): number {
   const left = Math.max(a.x, b.x);
@@ -239,6 +272,14 @@ function overlap(a: Box, b: Box): number {
  * OpenCV's own grouping does and lands closer to the true size of the face than
  * keeping the largest would: the largest passing window is usually slightly bigger
  * than the head.
+ *
+ * **A group has to be a GROUP.** One agreeing window is not a face — it is a lucky
+ * window — and keeping the singletons is what put boxes on torsos, on an orange launch
+ * suit and on the red of an American flag: measured 19 September 2026, on the practise
+ * set, eight of the seventeen boxes landed on a body or on background rather than on a
+ * face, and the worst of them covered two people at once. Requiring a cluster, which is
+ * what OpenCV's `minNeighbors` means, removes them. The count is deliberately the same
+ * number OpenCV defaults to.
  */
 function oneBoxPerFace(hits: Box[]): Box[] {
   const groups: Box[][] = [];
@@ -247,20 +288,22 @@ function oneBoxPerFace(hits: Box[]): Box[] {
     if (group) group.push(hit);
     else groups.push([hit]);
   }
-  return groups.map((group) => {
-    let x = 0;
-    let y = 0;
-    let w = 0;
-    let h = 0;
-    for (const box of group) {
-      x += box.x;
-      y += box.y;
-      w += box.w;
-      h += box.h;
-    }
-    const n = group.length;
-    return { x: Math.round(x / n), y: Math.round(y / n), w: Math.round(w / n), h: Math.round(h / n) };
-  });
+  return groups
+    .filter((group) => group.length >= LEAST_NEIGHBOURS)
+    .map((group) => {
+      let x = 0;
+      let y = 0;
+      let w = 0;
+      let h = 0;
+      for (const box of group) {
+        x += box.x;
+        y += box.y;
+        w += box.w;
+        h += box.h;
+      }
+      const n = group.length;
+      return { x: Math.round(x / n), y: Math.round(y / n), w: Math.round(w / n), h: Math.round(h / n) };
+    });
 }
 
 /**

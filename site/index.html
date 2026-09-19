@@ -102,6 +102,12 @@
             </div>
           </div>
 
+          <!-- Where the page says something that is not a question: a file it could not
+               read, two names typed into one box, how many pictures arrived. A line on
+               the page rather than a toast, and it stays until the next thing happens —
+               a message that fades while it is being read has not been delivered. -->
+          <p class="note-line" id="note" hidden></p>
+
           <p class="says" id="says">I don't know anything yet.</p>
 
           <!-- Directly under the line that introduces it: one button per thing it can see,
@@ -127,9 +133,9 @@
         <canvas id="confusedChart" height="140"></canvas>
       </section>
 
-      <!-- Everything else lives behind one door, for whoever wants it. -->
-      <details class="card more" id="more">
-        <summary>More detail — the numbers, and how to keep it</summary>
+      <!-- Everything else, open on the page rather than behind a door. -->
+      <section class="card more" id="more">
+        <h2>More detail — the numbers, and how to keep it</h2>
 
         <p class="why">
           <b>Why listing everything is worth the trouble.</b> One picture that names four things gives four pieces of
@@ -178,14 +184,12 @@
           <input type="file" id="loadInput" accept="application/json,.json" hidden />
           <button class="btn ghost danger" id="forgetBtn" type="button">Forget everything</button>
         </div>
-      </details>
+      </section>
     </main>
 
     <footer class="foot">
       <span><b>vision-ml-demo</b> · a prototype on nodejavascript.com</span>
       <span>Every picture stays on this computer. Nothing is uploaded.</span>
     </footer>
-
-    <div class="toast" id="toast" hidden></div>
   </body>
 </html>

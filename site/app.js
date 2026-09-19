@@ -219,19 +219,18 @@ const el = {
     passes: element('passes'),
     sureInput: element('sure'),
     augment: element('augment'),
-    more: element('more'),
     card: element('card'),
     saveBtn: element('saveBtn'),
     loadBtn: element('loadBtn'),
     loadInput: element('loadInput'),
     forgetBtn: element('forgetBtn'),
-    toast: element('toast'),
+    note: element('note'),
 };
 /* ------------------------------------------------------------------ *
  * The run — pictures handed over together, face by face
  * ------------------------------------------------------------------ */
-/** How many drawn pictures the practise link hands over. */
-const PRACTISE_COUNT = 10;
+/** How many photographs the practise link hands over, out of the whole set. */
+const PRACTISE_COUNT = 8;
 /**
  * How many pictures this run holds, counted from what is actually here rather than
  * kept in a counter of its own.
@@ -325,14 +324,17 @@ function send(request) {
 /* ------------------------------------------------------------------ *
  * Chatting to the person
  * ------------------------------------------------------------------ */
-let toastTimer = 0;
-function toast(message) {
-    el.toast.textContent = message;
-    el.toast.hidden = false;
-    window.clearTimeout(toastTimer);
-    toastTimer = window.setTimeout(() => {
-        el.toast.hidden = true;
-    }, 4200);
+/**
+ * Say something that is not a question.
+ *
+ * A line on the page, under the box it is usually about — not a toast floating over the
+ * page and vanishing on a timer. George, 2026-09-19: "i dont want toasts." It stays until
+ * the next thing happens, because a message that fades while it is being read has not been
+ * delivered, and `note('')` takes it away.
+ */
+function note(message) {
+    el.note.textContent = message;
+    el.note.hidden = message === '';
 }
 /** Built from text nodes rather than markup: the names are typed by a person. */
 function say(lead, strong, tail) {
@@ -463,14 +465,7 @@ function render() {
                 : `I know ${names.length} things — ${listWords(names)} — from ${named.length} ${plural(named.length, 'picture', 'pictures')}. ` +
                     'Show me a picture and I will find the faces in it.';
         el.answers.append(but('Choose a picture', 'primary', () => choosePicture()));
-        // Only while there is nothing to work with: the offer is a way out of an empty
-        // page, not something to reach for once you have pictures of your own.
-        if (named.length === 0) {
-            el.aside.append('No pictures handy? ');
-            el.aside.append(link('practise', () => void practise()));
-            el.aside.append(` on ${PRACTISE_COUNT} drawn shapes.`);
-            el.aside.hidden = false;
-        }
+        showPractiseOffer(named.length === 0);
         return;
     }
     if (state.stage === 'ready') {
@@ -495,6 +490,7 @@ function render() {
         // is over, the page says so, and only then does the spelling in the name show up.
         if (state.lastAnswer)
             el.answers.append(undoControl());
+        showPractiseOffer(false);
         return;
     }
     // stage === 'asking'
@@ -801,14 +797,15 @@ function choosePicture() {
  * fifty costs one full-size picture in memory at a time rather than fifty.
  */
 function enqueue(files) {
+    note('');
     const pictures = files.filter((file) => file.type.startsWith('image/'));
     if (pictures.length === 0) {
-        toast('None of those were pictures.');
+        note('None of those were pictures.');
         return;
     }
     if (pictures.length < files.length) {
         const missed = files.length - pictures.length;
-        toast(missed === 1
+        note(missed === 1
             ? 'One file was not a picture, so it was left out.'
             : `${missed} files were not pictures, so they were left out.`);
     }
@@ -848,7 +845,7 @@ async function openNextPhoto() {
             state.turns.push({ picture, boxes: detectFaces(picture.frame) });
         }
         catch {
-            toast(`${file.name} could not be read as a picture.`);
+            note(`${file.name} could not be read as a picture.`);
         }
         finally {
             state.opening = false;
@@ -885,7 +882,7 @@ async function nextPhoto() {
     await showFace();
     const faces = nextTurn.boxes.length;
     if (faces > 0) {
-        toast(faces === 1
+        note(faces === 1
             ? 'Found one face. Name it, or drag a box if it has the wrong one.'
             : `Found ${faces} faces. They are named one at a time.`);
     }
@@ -928,6 +925,7 @@ async function skip() {
     if (state.current === null)
         return;
     forgetUndo();
+    note('');
     if (box && !state.skippedBoxes.includes(box))
         state.skippedBoxes.push(box);
     state.current = null;
@@ -958,6 +956,7 @@ async function skipImage() {
     if (!turn)
         return;
     forgetUndo();
+    note('');
     for (const box of turn.boxes) {
         if (!state.skippedBoxes.includes(box) && !state.namedBoxes.includes(box))
             state.skippedBoxes.push(box);
@@ -1019,15 +1018,16 @@ async function answer(name, extra = 0) {
     const sample = state.current;
     if (!sample)
         return;
+    note('');
     if (name === '') {
-        toast('Name the thing in the box — one name is enough.');
+        note('Name the thing in the box — one name is enough.');
         el.list.focus();
         return;
     }
     // Somebody still typing a list. Said out loud rather than quietly taking the first,
     // because their second name would otherwise vanish with no sign it had.
     if (extra > 0) {
-        toast(`One name per box — I used "${name}".`);
+        note(`One name per box — I used "${name}".`);
     }
     const before = snapshotRun();
     const nameWasNew = !state.names.includes(name);
@@ -1087,6 +1087,7 @@ async function undoLastAnswer() {
     if (!last)
         return;
     forgetUndo();
+    note('');
     // The picture, the box, the counters: exactly as they were.
     restoreRun(last.before);
     // The name was never really given, so it comes off the picture, out of the list and out
@@ -1120,7 +1121,7 @@ async function undoLastAnswer() {
     else {
         study();
     }
-    toast(`Taken back — "${last.name}" is in the box. Correct it and press Tell it.`);
+    note(`Taken back — "${last.name}" is in the box. Correct it and press Tell it.`);
 }
 /**
  * The way back from a name typed wrong.
@@ -1136,19 +1137,36 @@ function undoControl() {
     return undo;
 }
 async function practise() {
-    // Practising hands the drawn pictures over the way an upload does — George, 2026-09-19:
+    // Practising hands the photographs over the way an upload does — George, 2026-09-19:
     // "load them all in the drag pictures here, like 10, so i can train the model as if i
-    // uploaded them". So nothing is taught on the person's behalf: the shapes queue up,
-    // each is opened in turn and searched for faces, and every box is named by hand. What
-    // is practised is therefore the real loop, not a shortcut through it.
-    const files = makeSampleFiles(PRACTISE_COUNT);
+    // uploaded them". So nothing is taught on the person's behalf: the pictures queue up,
+    // each is opened in turn and searched for faces, and every box is named by hand. What is
+    // practised is therefore the real loop, not a shortcut through it.
+    const files = await makeSampleFiles(PRACTISE_COUNT);
     if (files.length === 0) {
-        toast('The drawn shapes could not be prepared.');
+        note('The practise photographs would not load.');
         return;
     }
-    toast(`${files.length} drawn shapes queued — a shape on a coloured background, so naming one teaches two things. ` +
-        'These hold no faces, so a box on one is the detector guessing: the × removes it.');
+    note(
+    // The whole set is handed over, so the shuffle is the only randomness in it. Said as
+    // "picked at random" it would read as if some were being held back.
+    `${files.length} photographs queued, shuffled. ` +
+        'The boxes on them are the faces the detector found — the × removes one it got wrong.');
     enqueue(files);
+}
+/**
+ * The way to the practise set, said the same way wherever the page is at rest.
+ *
+ * It used to show only while nothing had been named, and it went as soon as a picture
+ * arrived — so somebody who had practised once could never get back to it. George,
+ * 2026-09-19: *"where did the practise images go?"* It is now offered at the start and
+ * again whenever a run finishes; only the first line changes.
+ */
+function showPractiseOffer(nothingNamed) {
+    el.aside.append(nothingNamed ? 'No pictures handy? ' : 'Want the practise set again? ');
+    el.aside.append(link('practise', () => void practise()));
+    el.aside.append(` on ${PRACTISE_COUNT} photographs.`);
+    el.aside.hidden = false;
 }
 /**
  * Study, in the background.
@@ -1244,7 +1262,7 @@ function handleMessage(message) {
         case 'error':
             state.studying = false;
             renderStudying();
-            toast(message.message);
+            note(message.message);
             return;
     }
 }
@@ -1291,15 +1309,11 @@ async function forgetEverything() {
     render();
     renderCard();
     renderCharts();
-    // Closing the panel puts the page back to how it looked on the first visit, and
-    // the button that was just pressed is inside it — so leaving it open would answer
-    // "forget everything" with a still-open drawer of settings about nothing.
-    el.more.open = false;
-    toast('It has forgotten everything — the pictures and everything it learned.');
+    note('It has forgotten everything — the pictures and everything it learned.');
 }
 function saveToFile() {
     if (!state.file) {
-        toast('There is nothing to save yet.');
+        note('There is nothing to save yet.');
         return;
     }
     const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
@@ -1312,7 +1326,7 @@ function saveToFile() {
     link.click();
     link.remove();
     URL.revokeObjectURL(url);
-    toast('Saved. Load it back with "Load a saved memory".');
+    note('Saved. Load it back with "Load a saved memory".');
 }
 async function loadFromFile(file) {
     try {
@@ -1330,10 +1344,10 @@ async function loadFromFile(file) {
         // line of guesses on screen again is dropped.
         forgetUndo();
         render();
-        toast(`Loaded — it remembers ${parsed.classes.length} things.`);
+        note(`Loaded — it remembers ${parsed.classes.length} things.`);
     }
     catch (error) {
-        toast(error instanceof Error ? error.message : 'That file could not be read.');
+        note(error instanceof Error ? error.message : 'That file could not be read.');
     }
 }
 function renderCard() {
@@ -1551,7 +1565,7 @@ async function boot() {
         const tooSmall = draft.w < turn.picture.width * 0.06 || draft.h < turn.picture.height * 0.06;
         if (tooSmall) {
             renderBoxes();
-            toast('That box was too small — drag across the face you want to name.');
+            note('That box was too small — drag across the face you want to name.');
             return;
         }
         forgetUndo();
@@ -1598,7 +1612,7 @@ async function boot() {
         event.preventDefault();
         const files = Array.from(event.dataTransfer?.files ?? []);
         if (files.length === 0) {
-            toast('That was not a picture.');
+            note('That was not a picture.');
             return;
         }
         // However many arrive, they all go in. Dropping twelve photographs and being
@@ -1635,22 +1649,22 @@ async function boot() {
     // to leave it behind and say so than to show confident rubbish.
     if (model && model.version !== MODEL_VERSION) {
         await store.clearModel();
-        toast('A memory from the older version was set aside. The pictures are still here.');
+        note('A memory from the older version was set aside. The pictures are still here.');
     }
     else if (model) {
         adopt(model);
         render();
         renderStudying();
-        toast(`Picked up where you left off — it knows ${model.classes.length} things from ${samples.length} pictures.`);
+        note(`Picked up where you left off — it knows ${model.classes.length} things from ${samples.length} pictures.`);
         return;
     }
     render();
     renderCharts();
     if (carried.failed) {
-        toast('Something saved under the old name could not be brought across.');
+        note('Something saved under the old name could not be brought across.');
     }
     else if (carried.carried > 0) {
-        toast(`Carried over ${carried.carried} ${plural(carried.carried, 'picture', 'pictures')} saved under the old name.`);
+        note(`Carried over ${carried.carried} ${plural(carried.carried, 'picture', 'pictures')} saved under the old name.`);
     }
 }
 void boot();
