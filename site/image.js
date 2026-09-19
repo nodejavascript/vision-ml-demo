@@ -35,7 +35,15 @@ export function pixelsFromCanvas(source, size = SAMPLE) {
     }
     return out;
 }
-/** A small JPEG for the grid, so a reloaded page shows the images instantly. */
+/**
+ * A small JPEG for the grid, so a reloaded page shows the images instantly.
+ *
+ * Quality 0.9 rather than 0.72, and that is a fix rather than a preference. JPEG spends
+ * its bits at edges, and a drawn practise shape is nothing but edge — at 0.72 the outline
+ * of a circle arrived on the stage fringed with colour that is not in the picture, which
+ * is the other half of George's 2026-09-19 report: "the test pictures should be sharper."
+ * The cost is a few kilobytes per picture, on a copy that is only ever displayed.
+ */
 export function thumbFromCanvas(source, max = 240) {
     const scale = Math.min(1, max / Math.max(source.width, source.height));
     const width = Math.max(1, Math.round(source.width * scale));
@@ -45,7 +53,7 @@ export function thumbFromCanvas(source, max = 240) {
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(source, 0, 0, width, height);
-    return work.toDataURL('image/jpeg', 0.72);
+    return work.toDataURL('image/jpeg', 0.9);
 }
 /** Decode a chosen file into both the model's view and a displayable thumbnail. */
 export async function decodeFile(file, size = SAMPLE) {
@@ -59,8 +67,13 @@ export async function decodeFile(file, size = SAMPLE) {
         bitmap.close();
     }
 }
-/** How wide the face search looks. Wide enough to keep a small face, small enough to be quick. */
-const ANALYSIS = 224;
+/**
+ * How wide the face search looks. Wide enough to keep a small face, small enough to be quick.
+ *
+ * Exported because the drawn practise pictures are painted at exactly this size, so the
+ * search reads the drawing's own pixels instead of an enlargement of them.
+ */
+export const ANALYSIS = 224;
 function frameFromCanvas(source) {
     const scale = Math.min(1, ANALYSIS / Math.max(source.width, source.height));
     const width = Math.max(1, Math.round(source.width * scale));

@@ -14,7 +14,7 @@
  * would set.
  */
 
-import { pixelsFromCanvas, thumbFromCanvas } from './image.js';
+import { ANALYSIS, pixelsFromCanvas } from './image.js';
 import { mulberry32 } from './net.js';
 
 export const SAMPLE_CLASS_LABELS = ['circle', 'square', 'triangle'];
@@ -41,11 +41,28 @@ export interface GeneratedSample {
    */
   colour: string;
   pixels: Uint8Array;
-  thumb: string;
+  /**
+   * The drawing itself, losslessly, as a PNG data URL.
+   *
+   * Lossless rather than the small JPEG the rest of the page uses for display, and that is
+   * the whole point. A drawn shape is nothing but hard edges, and JPEG spends its budget
+   * exactly there: the ringing it leaves along an outline is a band of in-between colours,
+   * which is one of the two things the face search reads as skin. Handed over as a JPEG,
+   * the practise pictures arrive at the detector blurred.
+   */
+  png: string;
   name: string;
 }
 
-const CANVAS = 128;
+/**
+ * The size every drawn picture is painted at — the size the face search looks at.
+ *
+ * Not a round number of its own choosing: it is image.ts's ANALYSIS, so the search reads
+ * the drawing's own pixels and never enlarges it. Drawn at 128 and scaled up to 224, every
+ * hard edge reached the detector as a soft gradient instead. George, 2026-09-19: "the test
+ * pictures should be sharper. getting too many boxes because of blurred lines."
+ */
+const CANVAS = ANALYSIS;
 
 function hsl(h: number, s: number, l: number): string {
   return `hsl(${Math.round(h)} ${Math.round(s)}% ${Math.round(l)}%)`;
@@ -102,7 +119,7 @@ export function makeSampleSet(perClass = 30, seed = 7): GeneratedSample[] {
         label,
         colour: hueName(shapeHue),
         pixels: pixelsFromCanvas(canvas),
-        thumb: thumbFromCanvas(canvas),
+        png: canvas.toDataURL('image/png'),
         name: `${label}-${n + 1}.png`,
       });
     }
@@ -132,12 +149,14 @@ export function makeSampleFiles(count = 10, seed = 7): File[] {
   for (let i = 0; i < count; i++) {
     const item = all[Math.floor(i * step)];
     if (!item) continue;
-    // The thumbnail is already the picture at full drawn size, so it is decoded back
-    // rather than drawn a second time. It is a JPEG, and the name says so — a file
-    // called .png holding JPEG bytes is the kind of small lie that costs an hour later.
-    const base64 = item.thumb.slice(item.thumb.indexOf(',') + 1);
+    // The drawing, at its own full size, decoded back out of the data URL rather than
+    // painted a second time — so it is the same picture that was measured, not another
+    // like it. A PNG, and the name says so: a file called .png holding JPEG bytes is the
+    // small lie that costs an hour later, and JPEG is what put the blur on these outlines
+    // in the first place.
+    const base64 = item.png.slice(item.png.indexOf(',') + 1);
     const bytes = Uint8Array.from(atob(base64), (ch) => ch.charCodeAt(0));
-    out.push(new File([bytes], item.name.replace(/\.png$/, '.jpg'), { type: 'image/jpeg' }));
+    out.push(new File([bytes], item.name, { type: 'image/png' }));
   }
   return out;
 }

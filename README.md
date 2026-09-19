@@ -73,6 +73,24 @@ These were once both explaining the same thing at once, and *name a second one* 
 said on the opening picture, before any first one existed. If a line needs the reason the
 model cannot answer, it goes in the first; if it needs an action, the second.
 
+**The question is at the top of the column, and the guess is the first thing under it.**
+The order used to be the model's line, then what to do, then the box to type in — so the one
+thing on the page you have to act on sat underneath two lines of narration about it. It now
+reads downwards: where you are, the question, *My guess:* with a button per thing it can
+see, then what to do next. The buttons are labelled with the names themselves, so agreeing
+with the model is one press and disagreeing is the box directly above it.
+
+**A guess, or nothing — never a name it has no reason to give.** Everything it offers has
+cleared the confidence line, which is the number behind the *More detail* door and is yours
+to move. Under that line there is nothing: the page says **I'm not sure yet** and offers no
+buttons at all. It used to name its strongest answer anyway — *I am not sure yet — my best
+guess is sarah, and I am only 34% on that* — on the reasoning that "I do not know" tells you
+nothing about which way it leans. George, 2026-09-19: *"is the confidense is lot, say im not
+sure yet. thats it. dont make dumb guesses."* So the value that produced that sentence is
+gone from the code rather than hidden in it: there is no strongest-answer reading anywhere
+in the page any more. A name under the line is one the model has no reason to give, and a
+button on it invites somebody to accept it without looking.
+
 ## Where the faces come from
 
 There is **no face detector in this browser** — `window.FaceDetector` exists on
@@ -155,14 +173,29 @@ behalf — what you practise is the loop a real upload goes through, not a short
 it. The offer is a small link just above the stage card, and it only appears while you
 have nothing named of your own.
 
-**One honest consequence, measured:** the drawn shapes are flat colour on flat colour,
-and the face detector is a proposer that will guess. Across the generated set, **1–8% of
-drawn pictures get a phantom box** — usually a few 8–18 px specks at the shape's
-anti-aliased edge, occasionally the whole shape when its hue happens to land in the skin
-range. The practise toast says so, and the **×** is the answer. It is the same behaviour
-you would get uploading a photograph of a bright orange circle, so the detector has not
-been tuned around it — a threshold that hid these would start rejecting small faces in
-real photographs, which is the thing it exists to find.
+**The drawn pictures are painted sharp, and that is a fix rather than a preference.**
+George, 2026-09-19: *"the test pictures should be sharper. getting too many boxes because of
+blurred lines."* He was right about the cause. The shapes were painted at **128 px**, saved as
+a **JPEG at quality 0.72**, and then enlarged to the 224 px the face search looks at — so
+every hard edge reached the detector as a four-pixel gradient, and the in-between colours
+along that gradient are exactly what the detector reads as skin. Painted at **224 px** (the
+search's own width, so it is never resampled at all) and handed over as a **PNG**, the edge
+stays one pixel wide.
+
+Measured over the whole 90-picture set, four seeds, before and after:
+
+| | before — 128 px, JPEG 0.72 | after — 224 px, PNG |
+|---|---|---|
+| pictures that got a box | **19 of 90** | **3 of 90** |
+| boxes drawn in total | 22 | 3 |
+| smallest box | 8×14 — a speck | 61×61 — the whole shape |
+| display: pixels that are neither the background nor the shape | 2.30% | **0.48%** |
+
+Every speck is gone. What is left is the other kind — the whole shape, when its hue happens
+to land in the skin range — and that is a colour coincidence rather than blur, so it is left
+alone. Tuning the shapes' colours, or the threshold, to hide it would start rejecting small
+faces in real photographs, which is the thing the detector exists to find. The practise toast
+says a box on a drawn shape is the detector guessing, and the **×** is the answer.
 
 ## The model
 

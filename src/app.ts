@@ -142,17 +142,16 @@ const state = {
   history: [] as EpochMetric[],
   /** The picture on the stage right now — not saved until it is named. */
   current: null as Sample | null,
-  /** What it can see in the current picture, most sure first. */
-  sees: [] as Array<{ name: string; sure: number }>,
   /**
-   * Its single strongest answer, whatever its confidence.
+   * What it can see in the current picture, most sure first.
    *
-   * Kept because "I do not know" is a dead end for the person standing in front of
-   * the page — the confidence line is theirs to move, and knowing what it leans
-   * towards is what makes that line mean something. It is only ever shown as a
-   * guess, never as an answer.
+   * Only ever what cleared the confidence line. Its strongest answer *under* the line
+   * used to be kept here too and shown as "I am not sure yet — my best guess is X, and I
+   * am only 34% on that". George, 2026-09-19: "is the confidense is lot, say im not sure
+   * yet. thats it. dont make dumb guesses." So there is no such value any more, and
+   * nothing in this file can produce one.
    */
-  best: null as { name: string; sure: number } | null,
+  sees: [] as Array<{ name: string; sure: number }>,
   /**
    * Pictures handed over together and not opened yet, in order.
    *
@@ -218,6 +217,7 @@ const el = {
   boxes: element<HTMLDivElement>('boxes'),
   picEmpty: element<HTMLDivElement>('picEmpty'),
   says: element<HTMLElement>('says'),
+  guesses: element<HTMLDivElement>('guesses'),
   sub: element<HTMLElement>('sub'),
   queue: element<HTMLElement>('queue'),
   tell: element<HTMLDivElement>('tell'),
@@ -419,31 +419,23 @@ function labelCounts(): Map<string, number> {
 }
 
 /**
- * Look at a picture once and report everything it can see, plus its strongest
- * answer whether or not that answer clears the bar.
+ * Look at a picture once and report everything it can see.
  *
  * One call, one forward pass: the network is the expensive part here and the page
  * would otherwise ask twice for the same picture on every redraw.
  */
-function look(sample: Sample | null): { sees: Array<{ name: string; sure: number }>; best: { name: string; sure: number } | null } {
+function look(sample: Sample | null): { sees: Array<{ name: string; sure: number }> } {
   const model = state.model;
   const classes = state.file?.classes ?? [];
-  if (!model || !sample || classes.length === 0) return { sees: [], best: null };
+  if (!model || !sample || classes.length === 0) return { sees: [] };
 
   const probs = model.predict(sample.pixels);
   const found: Array<{ name: string; sure: number }> = [];
-  let bestIndex = -1;
-  let bestSure = -1;
   for (let j = 0; j < classes.length; j++) {
     if (probs[j] >= state.sure) found.push({ name: classes[j], sure: probs[j] });
-    if (probs[j] > bestSure) {
-      bestSure = probs[j];
-      bestIndex = j;
-    }
   }
   found.sort((a, b) => b.sure - a.sure);
-  const best = bestIndex >= 0 && bestSure > 0.05 ? { name: classes[bestIndex], sure: bestSure } : null;
-  return { sees: found, best };
+  return { sees: found };
 }
 
 /* ------------------------------------------------------------------ *
@@ -467,6 +459,8 @@ function render(): void {
   if (state.turn && el.picture.src !== state.turn.picture.thumb) el.picture.src = state.turn.picture.thumb;
 
   el.answers.textContent = '';
+  el.guesses.textContent = '';
+  el.guesses.hidden = true;
   el.aside.textContent = '';
   el.aside.hidden = true;
   el.tell.hidden = true;
@@ -521,40 +515,41 @@ function render(): void {
   }
 
   // stage === 'asking'
-  // The instruction is in the label on the answer box and the position is in the chip
-  // above, so this line only adds what neither of those says: what was just noted,
-  // and — while it still cannot tell two things apart — why that matters.
+  // The question is at the top of the column and its instruction is in its own label, so
+  // these two lines only add what neither of those says: what was just noted, and — while
+  // it still cannot tell two things apart — why that matters.
   const noted = state.lastNoted.length > 0 ? `Noted ${listWords(state.lastNoted)}. ` : '';
   const askingAboutFace = currentBox() !== null;
-  // What to do, not why it cannot — the why is on the line above, in the model's own
-  // voice, and the same reason said twice on one screen is how a page starts to read as
-  // noise. And "name a second one" only means anything once there has been a first: on
-  // the opening picture it was asking for a second before any first existed.
+  // What to do, not why it cannot — the model's own voice is on the line above, and the
+  // same reason said twice on one screen is how a page starts to read as noise. And
+  // "name a second one" only means anything once there has been a first: on the opening
+  // picture it was asking for a second before any first existed.
   const nudge =
     names.length < 2
       ? state.lastNoted.length > 0
         ? 'Name a second one and I can start telling them apart.'
         : 'Name this one and I can start learning.'
       : 'I will remember every one of them.';
+  el.sub.textContent = `${noted}${nudge}`;
 
   if (state.sees.length > 0) {
-    // One name per box now, so the answer is the single strongest thing it can see
-    // rather than everything above the line. "I think this is sarah" is a claim
-    // somebody can agree with; a list of six is not.
-    const guess = state.sees[0].name;
-    say('I think this is ', guess, '.');
-    el.sub.textContent = `${noted}${nudge}`;
-    el.answers.append(but('Yes — that is it', '', () => void answer(guess)));
-  } else if (state.best) {
-    // Naming the strongest answer even when it is unsure is not a hedge: the
-    // confidence line is the person's to move, and "I do not know" tells them
-    // nothing about which way it leans.
-    const percent = Math.round(state.best.sure * 100);
-    say('I am not sure yet — my best guess is ', state.best.name, `, and I am only ${percent}% on that.`);
-    el.sub.textContent = `${noted}${nudge}`;
+    // One button per thing it can see, each labelled with the thing itself, so agreeing
+    // with it is a single press and the box to disagree with is right above. Buttons
+    // rather than a sentence naming them, because the network answers a separate yes/no
+    // per name and more than one can clear the line at once — "I think this is sarah and
+    // dog" is not a sentence, and a row of six would be nonsense.
+    say(state.sees.length === 1 ? 'My guess:' : 'My guesses:');
+    el.guesses.hidden = false;
+    for (const seen of state.sees) {
+      el.guesses.append(but(seen.name, '', () => void answer(seen.name)));
+    }
   } else {
-    say(cannotReadYet(names, named.length));
-    el.sub.textContent = `${noted}${nudge}`;
+    // Nothing cleared the confidence line, so there is nothing to offer — and offering the
+    // strongest answer anyway is the dumb guess George ruled out on 2026-09-19: a name
+    // under the line is one the model has no reason to give, and a button on it invites
+    // somebody to accept it without looking. Why it has nothing to say is a fact about its
+    // own state, so say that instead.
+    say(state.model && names.length >= 2 ? "I'm not sure yet." : cannotReadYet(names, named.length));
   }
 
   // The question changes with the subject: a rectangle is a person to name, and a
@@ -927,7 +922,6 @@ async function showFace(): Promise<void> {
 
   const now = look(state.current);
   state.sees = now.sees;
-  state.best = now.best;
   state.stage = 'asking';
   render();
   el.list.focus();
@@ -948,7 +942,6 @@ async function skip(): Promise<void> {
   if (box && !state.skippedBoxes.includes(box)) state.skippedBoxes.push(box);
   state.current = null;
   state.sees = [];
-  state.best = null;
   state.lastNoted = [];
 
   if (state.turn && state.turnIndex + 1 < state.turn.boxes.length) {
@@ -981,7 +974,6 @@ async function skipImage(): Promise<void> {
   }
   state.current = null;
   state.sees = [];
-  state.best = null;
   state.lastNoted = [];
   // Put the pointer on the last face so the ordinary "this picture is finished" path
   // runs, rather than a second way of finishing a picture existing beside it.
@@ -1007,7 +999,6 @@ function endRun(): void {
   state.turn = null;
   state.current = null;
   state.sees = [];
-  state.best = null;
   state.turns = [];
   state.files = [];
   state.photosDone = 0;
@@ -1024,7 +1015,6 @@ function another(): void {
   state.turn = null;
   state.current = null;
   state.sees = [];
-  state.best = null;
   state.turns = [];
   state.files = [];
   state.photosDone = 0;
@@ -1067,7 +1057,6 @@ async function answer(name: string, extra = 0): Promise<void> {
 
   state.lastNoted = [name];
   state.sees = [];
-  state.best = null;
 
   // Straight on to the next face, and then the next picture. The acknowledgement is
   // carried onto the next question's line, so a run of forty faces reads as forty
@@ -1203,7 +1192,6 @@ function handleMessage(message: HostMessage): void {
         // It got better while the picture sat on the stage — so say what it sees now.
         const now = look(state.current);
         state.sees = now.sees;
-        state.best = now.best;
         render();
       }
       return;
@@ -1245,7 +1233,6 @@ async function forgetEverything(): Promise<void> {
   state.history = [];
   state.current = null;
   state.sees = [];
-  state.best = null;
   state.turn = null;
   state.turns = [];
   state.files = [];
@@ -1453,7 +1440,6 @@ async function boot(): Promise<void> {
     if (state.current) {
       const now = look(state.current);
       state.sees = now.sees;
-      state.best = now.best;
     }
     render();
   });

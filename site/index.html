@@ -81,9 +81,10 @@
 
         <div class="talk">
           <p class="queue" id="queue" hidden></p>
-          <p class="says" id="says">I don't know anything yet.</p>
-          <p class="sub" id="sub">Show me a picture and name the things you can see in it, and I'll start learning.</p>
 
+          <!-- The question, first and above everything else. It is the one thing on this
+               page the person has to act on, and it used to sit underneath two lines of
+               the model's own narration. -->
           <div class="tell" id="tell" hidden>
             <!-- Which face is being asked about, shown small and up close, because the
                  box on a group photo is often too small to be sure of. -->
@@ -100,6 +101,15 @@
               <button class="btn primary" id="tellBtn" type="button">Tell it</button>
             </div>
           </div>
+
+          <p class="says" id="says">I don't know anything yet.</p>
+
+          <!-- Directly under the line that introduces it: one button per thing it can see,
+               each labelled with the thing itself, so agreeing is one press. Empty whenever
+               nothing cleared the confidence line. -->
+          <div class="guesses" id="guesses" hidden></div>
+
+          <p class="sub" id="sub">Show me a picture and name the things you can see in it, and I'll start learning.</p>
 
           <div class="answers" id="answers"></div>
         </div>
