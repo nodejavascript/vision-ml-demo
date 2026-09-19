@@ -79,7 +79,7 @@ const FRAMING = new Set([
     'of', 'in', 'on', 'at', 'with', 'and', 'or', 'to', 'very', 'just', 'really', 'only',
 ]);
 /** How to answer, said the same way everywhere so it only has to be learned once. */
-const HOW_TO_LIST = 'Name the things you can see — nouns only, separated by commas.';
+const HOW_TO_LIST = 'name the things you can see in it — nouns only, separated by commas.';
 /**
  * What the person typed, as a list of things.
  *
@@ -378,7 +378,8 @@ function render() {
         el.sub.textContent =
             names.length < 2
                 ? `I ${named.length === 0 ? "don't know anything yet" : `only know ${listWords(names)} so far`}. ` +
-                    `Show me one and ${HOW_TO_LIST} I need at least two different things before I can tell them apart.`
+                    `Show me one and ${HOW_TO_LIST} ` +
+                    'I need at least two different things before I can tell them apart.'
                 : `I know ${names.length} things — ${listWords(names)} — from ${named.length} ${plural(named.length, 'picture', 'pictures')}. ` +
                     'Show me a picture and I will say what I can see in it.';
         el.answers.append(but('Choose a picture', 'primary', () => choosePicture()));
@@ -416,13 +417,17 @@ function render() {
         return;
     }
     // stage === 'asking'
-    // What was just named rides on this line, and so does where you are in the run,
-    // so naming picture after picture reads as one continuous thing.
+    // The instruction to use is in the label on the answer box and the position in the
+    // run is in the chip above, so this line only adds what neither of those says:
+    // what was just noted, and — while it still cannot tell two things apart — why
+    // that matters.
     const noted = state.lastNoted.length > 0 ? `Noted ${listWords(state.lastNoted)}. ` : '';
-    const where = hasRun() ? `Picture ${runPosition()} of ${runTotal()}. ` : '';
+    const nudge = names.length < 2
+        ? 'Two different things is the least I can tell apart — show me a second kind of picture too.'
+        : 'I will remember every one of them.';
     if (state.sees.length > 0) {
         say('I can see ', listWords(state.sees.map((s) => s.name)), '.');
-        el.sub.textContent = `${noted}${where}${HOW_TO_LIST} I will remember all of it.`;
+        el.sub.textContent = `${noted}${nudge}`;
         el.answers.append(but('Yes — that is what I see', '', () => void answer(state.sees.map((s) => s.name))));
     }
     else if (state.best) {
@@ -431,14 +436,11 @@ function render() {
         // nothing about which way it leans.
         const percent = Math.round(state.best.sure * 100);
         say('I am not sure yet — my best guess is ', state.best.name, `, and I am only ${percent}% on that.`);
-        el.sub.textContent = `${noted}${where}${HOW_TO_LIST}`;
+        el.sub.textContent = `${noted}${nudge}`;
     }
     else {
         say('I do not know what is in this picture yet.');
-        el.sub.textContent =
-            names.length < 2
-                ? `${noted}${where}${HOW_TO_LIST} Show me a second kind of picture too — two things is the least I can tell apart.`
-                : `${noted}${where}${HOW_TO_LIST}`;
+        el.sub.textContent = `${noted}${nudge}`;
     }
     el.tell.hidden = false;
     el.list.value = '';
