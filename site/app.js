@@ -22,7 +22,7 @@ import { detectFaces } from './faces.js';
 import { makeSampleSet } from './samples.js';
 import { VisionTrainer } from './trainer-host.js';
 import * as store from './store.js';
-import { drawBars, drawLine, drawTiles } from './charts.js';
+import { drawBars, drawLine, drawProgress, drawTiles } from './charts.js';
 /** Bumped whenever the weights stop meaning what they meant. See types.ts. */
 const MODEL_VERSION = 2;
 /* ------------------------------------------------------------------ *
@@ -80,52 +80,40 @@ const FRAMING = new Set([
     'of', 'in', 'on', 'at', 'with', 'and', 'or', 'to', 'very', 'just', 'really', 'only',
 ]);
 /** How to answer, said the same way everywhere so it only has to be learned once. */
-const HOW_TO_LIST = 'name the things you can see in it — nouns only, separated by commas.';
+const HOW_TO_LIST = 'name the thing in the box — one name.';
 /**
- * What the person typed, as a list of things.
+ * The one name in the box.
  *
- * They are asked for nouns, because a name is what the model can use: a class called
- * "this is a photo of my cat" is not a thing, it is a sentence, and it would sit in
- * the vocabulary forever getting in the way of everything else. Three things are
- * done about that, and only these three:
+ * Each rectangle holds a single person, place or thing, so the answer is a single
+ * name and the field no longer takes a list. That is what makes the separators go: a
+ * name with "and" in it — fish and chips, salt and pepper — is now perfectly safe,
+ * because nothing splits on it any more. Only a real separator can, and that can only
+ * mean somebody is still typing a list, which is worth saying out loud rather than
+ * quietly turning their second name into the first.
  *
- *   1. Split on the separators people actually type — commas, semicolons, new
- *      lines — and on the words "and" and "or", because "a dog and a beach" is two
- *      things rather than one long one.
- *   2. Strip framing words **off the front** of a piece, turning the sentence above
- *      into "cat".
- *   3. Leave everything else exactly as typed.
- *
- * The front is the only safe place to cut. A word removed from the middle destroys a
- * name — "cup of tea", "rail house", "fish and chips" — so nothing is ever removed
- * from the middle or the end, and cleaning only starts at all when the first word is
- * one that could not begin a name. "photo frame" and "can opener" therefore come
- * through untouched, because they do not start with one.
- *
- * There is no dictionary here and this does not pretend to be one: it cannot know
- * that "sitting" is not a thing. What it can do is stop at the first real word, and
- * never invent a meaning by cutting into one.
+ * The framing words come off the front exactly as before, and only from the front:
+ * "this is my gran" is gran. Nothing is ever taken from the middle or the end, because
+ * "cup of tea" and "rail house" are single things.
  */
-function parseLabels(text) {
-    const seen = new Set();
-    const out = [];
-    for (const piece of text.toLowerCase().split(/[,;\n]+|\band\b|\bor\b/)) {
-        const words = piece
-            .replace(/[.!?]+/g, ' ')
-            .split(/\s+/)
-            .filter((word) => word !== '');
+function parseName(text) {
+    const pieces = text
+        .toLowerCase()
+        .split(/[,;\n]+/)
+        .map((piece) => piece
+        .replace(/[.!?]+/g, ' ')
+        .split(/\s+/)
+        .filter((word) => word !== ''))
+        .filter((words) => words.length > 0);
+    const cleaned = pieces.map((words) => {
         let start = 0;
-        if (words.length > 0 && OPENS_A_SENTENCE.has(words[0])) {
+        if (OPENS_A_SENTENCE.has(words[0])) {
             while (start < words.length && FRAMING.has(words[start]))
                 start += 1;
         }
-        const name = words.slice(start).join(' ');
-        if (name === '' || seen.has(name))
-            continue;
-        seen.add(name);
-        out.push(name);
-    }
-    return out;
+        return words.slice(start).join(' ');
+    });
+    const usable = cleaned.filter((name) => name !== '');
+    return { name: usable[0] ?? '', extra: Math.max(0, usable.length - 1) };
 }
 const state = {
     samples: [],
@@ -218,10 +206,12 @@ const el = {
     who: element('who'),
     face: element('face'),
     whoNote: element('whoNote'),
+    skipFace: element('skipFace'),
+    skipImage: element('skipImage'),
+    progressChart: element('progressChart'),
     list: element('list'),
     tellBtn: element('tellBtn'),
     answers: element('answers'),
-    controls: element('controls'),
     aside: element('aside'),
     progress: element('progress'),
     studying: element('studying'),
@@ -430,12 +420,12 @@ function render() {
     if (state.turn && el.picture.src !== state.turn.picture.thumb)
         el.picture.src = state.turn.picture.thumb;
     el.answers.textContent = '';
-    el.controls.textContent = '';
     el.aside.textContent = '';
     el.aside.hidden = true;
     el.tell.hidden = true;
     el.who.hidden = true;
     renderBoxes();
+    renderImageProgress();
     if (state.stage === 'start') {
         say('Show me a picture.');
         el.sub.textContent =
@@ -490,9 +480,13 @@ function render() {
         ? `Two different ${askingAboutFace ? 'people' : 'things'} is the least I can tell apart — name a second one too.`
         : 'I will remember every one of them.';
     if (state.sees.length > 0) {
-        say('I can see ', listWords(state.sees.map((s) => s.name)), '.');
+        // One name per box now, so the answer is the single strongest thing it can see
+        // rather than everything above the line. "I think this is sarah" is a claim
+        // somebody can agree with; a list of six is not.
+        const guess = state.sees[0].name;
+        say('I think this is ', guess, '.');
         el.sub.textContent = `${noted}${nudge}`;
-        el.answers.append(but('Yes — that is what I see', '', () => void answer(state.sees.map((s) => s.name))));
+        el.answers.append(but('Yes — that is it', '', () => void answer(guess)));
     }
     else if (state.best) {
         // Naming the strongest answer even when it is unsure is not a hedge: the
@@ -525,29 +519,22 @@ function render() {
                 ? 'Wrong box? Press the × on it. Missing one? Drag across it.'
                 : 'Press a box to pick it, × to remove it, or drag across a face to add one it missed.';
     if (askingAboutFace) {
-        el.tellLabel.textContent = 'Who is this? Names only, separated by commas:';
-        el.list.placeholder = 'sarah, gran, uncle ray';
+        el.tellLabel.textContent = 'Who or what is in this box? One name:';
+        el.list.placeholder = 'sarah, or the dog, or the beach';
     }
     else {
-        el.tellLabel.textContent = 'What can you see in it? Just the things themselves — nouns, separated by commas:';
-        el.list.placeholder = 'dog, cat, sky, beach, rail house';
+        el.tellLabel.textContent = 'What is in this picture? One name:';
+        el.list.placeholder = 'the kitchen, or the garden';
     }
-    // The buttons say how much is behind this one, because that is the thing you want
-    // to know before deciding whether to bother with a hard picture.
+    // Two ways to move on, each sitting under the thing it acts on rather than in a
+    // button row beside them: skip the face, or skip the whole picture.
     const leftInPhoto = state.turn ? state.turn.boxes.length - state.turnIndex - 1 : 0;
-    if (askingAboutFace) {
-        el.controls.append(but(leftInPhoto > 0 ? `Skip this face (${leftInPhoto} more in this photo)` : 'Skip this face', 'ghost', () => void skip()));
-        // Only offered when there is more than one face left. With a single one ahead the
-        // two buttons would still differ — this one advances to it, that one finishes the
-        // picture — but offering a second, subtly different skip to save a single press is
-        // a worse trade than just pressing skip twice.
-        if (leftInPhoto > 1) {
-            el.controls.append(but(`Skip the other ${leftInPhoto}`, 'ghost', () => void skipRest()));
-        }
-    }
-    else {
-        el.controls.append(but('Show me a different picture', 'ghost', () => void skip()));
-    }
+    el.skipFace.hidden = !askingAboutFace;
+    el.skipImage.hidden = false;
+    el.skipImage.title =
+        leftInPhoto > 0
+            ? `Leave this picture — ${leftInPhoto} ${plural(leftInPhoto, 'face', 'faces')} will not be named`
+            : 'Leave this picture';
 }
 /**
  * Where the run has got to, said plainly, and only while a picture is on the stage.
@@ -699,6 +686,30 @@ async function goToFace(index) {
         return;
     state.turnIndex = index;
     await showFace();
+}
+/**
+ * How far through this picture you are, drawn under it.
+ *
+ * One segment per rectangle, so it is a picture of the picture rather than a number
+ * about it: a bar showing three filled segments and five hollow ones says "three of
+ * eight" in a way a numeral cannot. Nothing is drawn when there is no picture, or when
+ * the picture has no boxes — a chart of zero things is not information, it is noise.
+ */
+function renderImageProgress() {
+    const turn = state.turn;
+    const show = turn !== null && turn.boxes.length > 0 && state.stage === 'asking';
+    el.progressChart.hidden = !show;
+    if (!show || !turn)
+        return;
+    drawProgress(el.progressChart, turn.boxes.map((box, index) => ({
+        state: state.namedBoxes.includes(box)
+            ? 'named'
+            : state.skippedBoxes.includes(box)
+                ? 'skipped'
+                : index === state.turnIndex
+                    ? 'current'
+                    : 'left',
+    })));
 }
 function renderProgress() {
     const named = namedSamples();
@@ -889,13 +900,15 @@ async function skip() {
     endRun();
 }
 /**
- * Leave the rest of this picture alone.
+ * Leave this picture alone and go on to the next.
  *
- * A group photograph is the case this exists for: eight faces found, one of them
- * wanted. Making somebody decline the other seven one at a time is the kind of small
- * tediousness that stops a page being used.
+ * The action for both kinds of item: a picture whose faces you do not want, and a
+ * picture with no face in it at all. Marking every remaining box is what makes the
+ * difference visible rather than the page simply jumping away — a group photograph is
+ * the case this exists for, eight faces found and none of them wanted, and declining
+ * them one at a time is the kind of small tediousness that stops a page being used.
  */
-async function skipRest() {
+async function skipImage() {
     const turn = state.turn;
     if (!turn)
         return;
@@ -958,19 +971,26 @@ function another() {
     render();
     choosePicture();
 }
-async function answer(labels) {
+async function answer(name, extra = 0) {
     const sample = state.current;
     if (!sample)
         return;
-    if (labels.length === 0) {
-        toast('Name at least one thing you can see in it — just the thing itself.');
+    if (name === '') {
+        toast('Name the thing in the box — one name is enough.');
         el.list.focus();
         return;
     }
-    for (const name of labels)
-        if (!state.names.includes(name))
-            state.names.push(name);
-    sample.labels = labels;
+    // Somebody still typing a list. Said out loud rather than quietly taking the first,
+    // because their second name would otherwise vanish with no sign it had.
+    if (extra > 0) {
+        toast(`One name per box — I used "${name}".`);
+    }
+    if (!state.names.includes(name))
+        state.names.push(name);
+    // One label, because one rectangle is one person, place or thing. The network still
+    // answers per name underneath; a sample that happens to carry a single one is
+    // simply the ordinary case now.
+    sample.labels = [name];
     if (!state.samples.includes(sample))
         state.samples.push(sample);
     await store.putSample(sample);
@@ -979,7 +999,7 @@ async function answer(labels) {
     const box = currentBox();
     if (box && !state.namedBoxes.includes(box))
         state.namedBoxes.push(box);
-    state.lastNoted = labels;
+    state.lastNoted = [name];
     state.sees = [];
     state.best = null;
     // Straight on to the next face, and then the next picture. The acknowledgement is
@@ -1307,11 +1327,15 @@ function renderMaps() {
  * Wiring
  * ------------------------------------------------------------------ */
 async function boot() {
-    el.tellBtn.addEventListener('click', () => void answer(parseLabels(el.list.value)));
+    el.tellBtn.addEventListener('click', () => {
+        const typed = parseName(el.list.value);
+        void answer(typed.name, typed.extra);
+    });
     el.list.addEventListener('keydown', (event) => {
         if (event.key === 'Enter') {
             event.preventDefault();
-            void answer(parseLabels(el.list.value));
+            const typed = parseName(el.list.value);
+            void answer(typed.name, typed.extra);
         }
     });
     el.saveBtn.addEventListener('click', () => saveToFile());
@@ -1323,6 +1347,11 @@ async function boot() {
             void loadFromFile(file);
     });
     el.forgetBtn.addEventListener('click', () => void forgetEverything());
+    // The two ways to move on. Both are links under the thing they act on rather than
+    // buttons beside them, because that is what they are about: this face, or this
+    // picture.
+    el.skipFace.addEventListener('click', () => void skip());
+    el.skipImage.addEventListener('click', () => void skipImage());
     el.passes.addEventListener('change', () => {
         state.passes = Math.max(2, Math.min(80, Number(el.passes.value) || 60));
         el.passes.value = String(state.passes);
@@ -1477,6 +1506,7 @@ async function boot() {
     window.addEventListener('resize', () => {
         renderCharts();
         renderBoxes();
+        renderImageProgress();
     });
     // A rename must not strand what is already saved. See store.migrateLegacy.
     const carried = await store.migrateLegacy().catch(() => ({ carried: 0, failed: true }));

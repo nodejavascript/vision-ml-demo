@@ -33,9 +33,11 @@ Both share the same engine (`src/net.ts` and friends). Only the page differs.
    people in a photograph are named **one at a time** — *face 1 of 2*, then *face 2
    of 2* — and each face is saved as its own thing to recognise, not the whole
    photograph.
-3. **For each box, name the person.** Names only, separated by commas. A photograph
+3. **For each box, give it one name — one person, place or thing.** A photograph
    with no face found in it falls back to naming the picture itself.
-4. **It studies, in the background, and remembers.**
+4. **Watch the chart under the picture fill in.** One segment per box: named,
+   skipped, the one being asked, and the ones still to come.
+5. **It studies, in the background, and remembers.**
 
 The run keeps its rhythm: naming a face goes straight on to the next one, and what
 you wrote rides along on the next question's line. A second batch dropped mid-run
@@ -45,10 +47,12 @@ queues up behind what is already waiting.
 that it was — dimmed, with its number struck through. Skipping is deliberately *not*
 the same as removing: the face is still there and still counted, because it is a face
 the detector found and pretending otherwise would be a lie about what the picture
-holds. Removing is the **×**, for a box that should never have been drawn. `Skip the
-other N` appears when more than one face is left, because eight faces found and one
-wanted is the ordinary case and declining the other seven one at a time is the kind of
-small tediousness that stops a page being used.
+holds. Removing is the **×**, for a box that should never have been drawn.
+
+There are two ways out, and both are links sitting under the thing they act on:
+**Skip this face** beneath the face's thumbnail, and **Skip this image** beneath the
+picture, for a photograph that turns out to hold nothing you want to name. The second
+is the answer to eight faces found and none of them wanted.
 
 That is the whole page. There is no Train button, because the person this is for
 should not have to know what a learning rate is to teach it something. The numbers
@@ -77,40 +81,49 @@ darker skin in dim light; and it knows nothing about what a face *is* — "one b
 skin" is all the structure it understands, so two people standing close together can
 come out as one box.
 
-## Why a list
+## One box, one name
 
-Asking for a list rather than a single name is what makes one picture worth several.
-A photograph of a dog on a beach teaches **dog** *and* **beach**, and the same
-picture is reused by both answers — so twenty photographs go much further than they
-would if each one had to pick a winner. It is also how real image collections are
-labelled.
+The page used to take a comma-separated list — `dog, cat, sky, beach`. It does not
+any more, and the reason is the comma. Eight faces in a photograph means eight
+questions, and a box holding one person is not a place a list belongs: the separator
+that helped when a whole picture was being described is what silently split
+**fish and chips** into two strangers.
 
-Underneath, that is a different network: a separate yes/no for each thing it knows
+So each box gets **one** name, and the separators are gone. Type *fish and chips* and
+that is what is stored; type *dog, cat* and the page says so — *One name per box — I
+used "dog"* — rather than quietly keeping half of it. One picture is still worth
+several names, because a photograph with three faces is asked about three times.
+
+Underneath, that is a multi-label network: a separate yes/no for each thing it knows
 (`sigmoid` + binary cross-entropy) instead of one choice out of all of them
 (`softmax`). It is why the page can answer with more than one thing at a time.
 
 Measured on the 90 drawn shapes / 11 names: loss **0.85 → 0.13**, **85%** on
 pictures held back from training, **72–100%** per name.
 
-## Nouns only
+## How a name is read
 
 A name is what the model can use. A class called *"this is a photo of my cat"* is not
 a thing, it is a sentence, and it would sit in the vocabulary forever getting in the
-way of everything else. So the page asks for **nouns, separated by commas** —
-`dog, cat, sky, beach, rail house` — and `parseLabels()` does three things about it:
+way of everything else. So the page asks for **one name per box** — `dog`, `cat`,
+`sky`, `beach`, `rail house` — and `parseName()` does two things about it:
 
-1. **Split** on commas, semicolons and new lines, and on the words *and* / *or* —
-   "a dog and a beach" is two things, not one long one.
-2. **Strip framing words off the front**, but only when the piece starts with a word
-   that could not begin a name — *a, the, my, this, i, there, some…* So
+1. **Strip framing words off the front**, but only when the first word is one that
+   could not begin a name — *a, the, my, this, i, there, some…* So
    "this is a photo of my cat" becomes **cat**, and "the sky" becomes **sky**.
-3. **Leave everything else exactly as typed.**
+2. **Leave everything else exactly as typed.** There is nothing to split, because one
+   box holds one thing.
 
-**The front is the only safe place to cut.** A word removed from the middle destroys
-a name — *cup of tea*, *rail house*, *fish and chips* — so nothing is ever taken from
-the middle or the end, and cleaning only starts at all if the first word could not
-begin a name. That is why **photo frame** and **can opener** come through untouched:
-they do not start with one.
+**The front is the only place anything is cut, and the only words cut are ones that
+could not start a name.** Nothing is ever taken from the middle or the end, and
+nothing is cut on at all — which is what keeps *cup of tea*, *rail house* and
+**fish and chips** whole. The earlier version split those, because it treated *and* /
+*or* as separators: right for a sentence, wrong for a name. **photo frame** and
+**can opener** come through untouched because they do not start with a framing word.
+
+Type more than one name and it is not silently dropped — the first is stored and the
+page says what it did, *One name per box — I used "dog"*. A name kept without being
+mentioned is how a vocabulary fills up with things nobody meant to teach it.
 
 There is **no dictionary** here and this does not pretend to be one. It cannot know
 that *sitting* is not a thing, so "a cat sitting on a wall" comes out as
@@ -119,9 +132,9 @@ the noun ends — and the page echoes back every name it stored, so a bad one is
 immediately rather than buried in the vocabulary.
 
 No pictures handy? **It will practise on that same set** — 90 drawn shapes, each a
-shape in a colour, so every one of them is a two-label picture. The offer is a
-small link in the corner of the stage, and it only appears while you have nothing
-named of your own.
+shape in a colour, so every one of them is a two-label picture. The offer is a small
+link just above the stage card, and it only appears while you have nothing named of
+your own.
 
 ## The model
 
@@ -169,6 +182,7 @@ framework, no matrix library, no runtime dependencies.
 |---|---|
 | `src/net.ts` | the network, its gradients, and the Adam update |
 | `src/image.ts` | a file → 48×48 bytes, and the thumbnails |
+| `src/faces.ts` | where the boxes come from — skin colour, blobs, no weights |
 | `src/store.ts` | IndexedDB — the pictures and the model |
 | `src/trainer-host.ts` | the study loop, one pass at a time, in 40 ms slices |
 | `src/trainer.worker.ts` | runs it off the main thread |

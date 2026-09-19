@@ -100,6 +100,119 @@ function emptyState(surface: Surface, title: string, hint: string): void {
 }
 
 /* ------------------------------------------------------------------ *
+ * How far through one picture you are
+ * ------------------------------------------------------------------ */
+
+/** What has happened to one rectangle. */
+export type BoxState = 'named' | 'skipped' | 'current' | 'left';
+
+export interface BoxProgress {
+  state: BoxState;
+}
+
+/**
+ * One segment per rectangle, so the chart is a picture of the picture.
+ *
+ * A bar rather than a number because "3 of 8" and a bar showing three filled segments
+ * and five hollow ones are the same fact, and only one of them can be taken in without
+ * reading. The segment being asked about is the one outlined, so the chart also says
+ * WHERE you are, not only how far.
+ */
+export function drawProgress(
+  canvas: HTMLCanvasElement,
+  boxes: BoxProgress[],
+  options: { emptyTitle?: string; emptyHint?: string } = {},
+): void {
+  const surface = prepare(canvas, 64);
+  if (!surface) return;
+  const { ctx, width, height } = surface;
+  const t = theme();
+
+  if (boxes.length === 0) {
+    emptyState(surface, options.emptyTitle ?? 'Nothing to count yet.', options.emptyHint ?? '');
+    return;
+  }
+
+  const named = boxes.filter((b) => b.state === 'named').length;
+  const skipped = boxes.filter((b) => b.state === 'skipped').length;
+  const done = named + skipped;
+  const current = boxes.findIndex((b) => b.state === 'current');
+
+  // Room for the count above the bar and the words below it.
+  const labelHeight = 20;
+  const barHeight = Math.min(22, height - labelHeight - 18);
+  const gap = boxes.length > 12 ? 2 : 4;
+  const segment = (width - gap * (boxes.length - 1)) / boxes.length;
+  const top = labelHeight;
+
+  ctx.font = '600 13px system-ui, sans-serif';
+  ctx.textBaseline = 'alphabetic';
+  const heading = `${done} of ${boxes.length} done`;
+  if (current >= 0) {
+    ctx.fillStyle = t.muted;
+    ctx.fillText(heading, 0, 14);
+    const asking = `asking about ${current + 1}`;
+    ctx.textAlign = 'right';
+    ctx.fillStyle = t.yellow;
+    ctx.fillText(asking, width, 14);
+    ctx.textAlign = 'left';
+  } else {
+    ctx.fillStyle = done === boxes.length ? t.accent : t.muted;
+    ctx.fillText(done === boxes.length ? `all ${boxes.length} done` : heading, 0, 14);
+  }
+
+  boxes.forEach((box, index) => {
+    const x = index * (segment + gap);
+    const radius = Math.min(5, segment / 2, barHeight / 2);
+    if (box.state === 'named') {
+      ctx.fillStyle = t.accent;
+      roundRect(ctx, x, top, segment, barHeight, radius);
+      ctx.fill();
+    } else if (box.state === 'skipped') {
+      // Deliberately faint and hatched: dealt with, but not taught anything.
+      ctx.fillStyle = 'rgba(255,255,255,0.10)';
+      roundRect(ctx, x, top, segment, barHeight, radius);
+      ctx.fill();
+      ctx.save();
+      ctx.beginPath();
+      roundRect(ctx, x, top, segment, barHeight, radius);
+      ctx.clip();
+      ctx.strokeStyle = 'rgba(255,255,255,0.16)';
+      ctx.lineWidth = 1.5;
+      for (let d = -barHeight; d < segment; d += 6) {
+        ctx.beginPath();
+        ctx.moveTo(x + d, top + barHeight);
+        ctx.lineTo(x + d + barHeight, top);
+        ctx.stroke();
+      }
+      ctx.restore();
+    } else if (box.state === 'current') {
+      ctx.strokeStyle = t.yellow;
+      ctx.lineWidth = 2.5;
+      roundRect(ctx, x + 1, top + 1, Math.max(2, segment - 2), barHeight - 2, radius);
+      ctx.stroke();
+    } else {
+      ctx.strokeStyle = 'rgba(255,255,255,0.16)';
+      ctx.lineWidth = 1.5;
+      roundRect(ctx, x + 1, top + 1, Math.max(2, segment - 2), barHeight - 2, radius);
+      ctx.stroke();
+    }
+  });
+
+  // The words below, so the colours do not have to be guessed at.
+  ctx.font = '11.5px system-ui, sans-serif';
+  const parts: string[] = [];
+  if (named > 0) parts.push(`${named} named`);
+  if (skipped > 0) parts.push(`${skipped} skipped`);
+  const left = boxes.length - done;
+  if (left > 0) parts.push(`${left} to go`);
+  ctx.fillStyle = t.muted;
+  ctx.globalAlpha = 0.85;
+  ctx.fillText(parts.join(' · '), 0, top + barHeight + 14);
+  ctx.globalAlpha = 1;
+}
+
+/* ------------------------------------------------------------------ *
  * A line chart
  * ------------------------------------------------------------------ */
 

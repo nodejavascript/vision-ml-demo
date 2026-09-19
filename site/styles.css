@@ -110,6 +110,11 @@ h1 { font-size: clamp(28px, 5vw, 40px); line-height: 1.1; letter-spacing: -0.5px
   background: linear-gradient(180deg, rgba(27, 16, 44, 0.72), rgba(14, 8, 23, 0.72));
 }
 
+/* The picture and the link that acts on it, stacked, so the link sits under the
+   picture rather than floating in the column beside it. */
+.picwrap { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.skip-image { align-self: center; }
+
 .pic {
   position: relative;
   border-radius: 12px;
@@ -227,15 +232,16 @@ h1 { font-size: clamp(28px, 5vw, 40px); line-height: 1.1; letter-spacing: -0.5px
 
 /* Which face, shown small and up close. On a group photo the box is often too small
    to be sure which person is meant, and naming the wrong one is worse than useless. */
-.who { display: flex; gap: 12px; align-items: flex-start; margin-bottom: 12px; }
-.who img {
-  width: 76px; height: 76px; flex: 0 0 auto;
+.who { display: flex; gap: 14px; align-items: flex-start; margin-bottom: 12px; }
+.who-face { display: flex; flex-direction: column; gap: 7px; align-items: center; flex: 0 0 auto; }
+.who-face img {
+  width: 76px; height: 76px;
   border-radius: 10px;
   border: 2px solid var(--yellow);
   object-fit: cover;
   background: #000;
 }
-.who-note { margin: 0; color: var(--muted); font-size: 12.5px; line-height: 1.5; }
+.who-note { margin: 0; padding-top: 2px; color: var(--muted); font-size: 12.5px; line-height: 1.5; }
 .who-note b { color: var(--text); }
 
 .tell-label { display: block; color: var(--text); font-size: 14px; font-weight: 600; margin-bottom: 7px; }
@@ -252,11 +258,11 @@ h1 { font-size: clamp(28px, 5vw, 40px); line-height: 1.1; letter-spacing: -0.5px
 .answers { display: flex; flex-wrap: wrap; gap: 10px; }
 .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 14px; }
 
-/* Sits in the bottom-right corner of the stage, on the row below both columns. */
+/* Sits above the stage card, right-aligned, so it reads as a footnote to the page's
+   opening words rather than as one of the controls below it. */
 .aside {
-  grid-column: 1 / -1;
-  justify-self: end;
-  margin: 0;
+  margin: 0 0 10px;
+  text-align: right;
   color: var(--muted);
   font-size: 13.5px;
 }
@@ -340,6 +346,9 @@ canvas {
 #rightChart { height: 150px; }
 #knowsChart { height: 200px; }
 #filtersChart, #mapsChart { height: 170px; }
+/* Under the picture, so no border of its own — it should read as part of the picture
+   card rather than a second panel. */
+#progressChart { height: 64px; border: 0; background: transparent; }
 
 .more { padding: 0; }
 .more > summary {
@@ -414,7 +423,8 @@ canvas {
 
 @media (max-width: 720px) {
   .stage { grid-template-columns: 1fr; gap: 18px; padding: 18px; }
-  .pic { max-width: 260px; margin: 0 auto; width: 100%; }
+  .picwrap { max-width: 260px; margin: 0 auto; width: 100%; }
+  .pic { width: 100%; }
   main { padding: 24px 16px 50px; }
   .card { padding: 18px; }
   .more > *:not(summary) { margin-left: 18px; margin-right: 18px; }
