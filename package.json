@@ -11,6 +11,7 @@
     "build": "tsc",
     "dev": "tsc && node tools/serve.js 4330",
     "serve": "node tools/serve.js 4330",
+    "cascade": "node tools/build-cascade.mjs",
     "watch": "tsc --watch"
   },
   "devDependencies": {
