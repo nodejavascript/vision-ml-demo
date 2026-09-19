@@ -1,24 +1,29 @@
 /**
- * app.ts — the simple version.
+ * app.ts — the simple version, multi-label.
  *
  * One picture at a time, and one question at a time. The whole loop is:
  *
- *   show a picture  →  it guesses  →  you say what it is  →  it studies  →  again
+ *   show a picture  →  it says what it can see  →  you list what you see
+ *                   →  it studies  →  again
  *
- * There is no Train button and no numbers to set on the front of the page. It
- * studies by itself after every answer, because the person this is for should
- * not have to know what a learning rate is to teach it something. The numbers
- * still exist, behind the "More detail" door, for whoever wants them.
+ * The answer is a LIST, separated by commas, and that is not a detail of the
+ * wording — it is what makes the learning better. A photograph of a dog on a
+ * beach teaches it "dog" and "beach" at once instead of forcing a choice between
+ * them, and the same picture gets reused by everything in it. Underneath, that
+ * means the network answers an independent yes/no for each thing (sigmoid and
+ * binary cross-entropy) rather than picking one winner from all of them (softmax).
  *
- * The engine underneath (net.ts, image.ts, store.ts) is unchanged from the
- * detailed version — only this shell is different.
+ * There is no Train button, because the person this is for should not have to know
+ * what a learning rate is to teach it something.
  */
 import { Cnn } from './net.js';
 import { decodeFile } from './image.js';
 import { makeSampleSet } from './samples.js';
 import { VisionTrainer } from './trainer-host.js';
 import * as store from './store.js';
-import { drawHeatmap, drawLine, drawTiles } from './charts.js';
+import { drawBars, drawLine, drawTiles } from './charts.js';
+/** Bumped whenever the weights stop meaning what they meant. See types.ts. */
+const MODEL_VERSION = 2;
 /* ------------------------------------------------------------------ *
  * Helpers
  * ------------------------------------------------------------------ */
@@ -33,7 +38,7 @@ function newId() {
         return crypto.randomUUID();
     return `s-${Math.random().toString(36).slice(2)}-${Date.now().toString(36)}`;
 }
-/** "a cat" · "a cat and Sarah" · "a cat, Sarah and Bob" */
+/** "a bear" · "a bear and a tree" · "a bear, a tree and the sky" */
 function listWords(names) {
     if (names.length === 0)
         return 'nothing yet';
@@ -44,7 +49,6 @@ function listWords(names) {
 function plural(count, one, many) {
     return count === 1 ? one : many;
 }
-/** Only reuse weights when the list of names has merely grown. */
 function startsWith(prefix, full) {
     if (prefix.length > full.length)
         return false;
@@ -53,53 +57,87 @@ function startsWith(prefix, full) {
             return false;
     return true;
 }
+/**
+ * What the person typed, as a list.
+ *
+ * The page asks for commas, but semicolons and newlines are accepted too, because
+ * people type what they type. A leading "a" or "the" is dropped: "a bear" and
+ * "bear" are the same thing, and two spellings of one thing would become two
+ * classes that each end up with half the pictures.
+ */
+function parseLabels(text) {
+    const seen = new Set();
+    const out = [];
+    for (const piece of text.split(/[,;\n]/)) {
+        const name = piece
+            .trim()
+            .toLowerCase()
+            .replace(/^(a|an|the)\s+/, '')
+            .replace(/[.!?]+$/, '')
+            .trim();
+        if (name === '' || seen.has(name))
+            continue;
+        seen.add(name);
+        out.push(name);
+    }
+    return out;
+}
 const state = {
     samples: [],
-    /** The names it knows. Only ever grows, so a name never changes meaning. */
+    /** The things it knows. Only ever grows, so a name never changes meaning. */
     names: [],
     model: null,
     file: null,
     history: [],
     /** The picture on the stage right now — not saved until it is named. */
     current: null,
-    guess: null,
+    /** What it can see in the current picture, most sure first. */
+    sees: [],
+    /**
+     * Its single strongest answer, whatever its confidence.
+     *
+     * Kept because "I do not know" is a dead end for the person standing in front of
+     * the page — the confidence line is theirs to move, and knowing what it leans
+     * towards is what makes that line mean something. It is only ever shown as a
+     * guess, never as an answer.
+     */
+    best: null,
     stage: 'start',
-    /** The weights handed to the worker for the run in flight. */
     approved: null,
-    sure: 0.55,
+    sure: 0.5,
     passes: 60,
-    /** A safety net only. The run is background work, so it is not there to make
-        anybody wait — it stops a runaway on a very large set of pictures. */
+    /** A runaway guard only: studying is background work, not a wait. */
     budgetMs: 45000,
-    /** The pass count for the run in flight, and how far through it is. */
     plannedPasses: 60,
     currentPass: 0,
     studying: false,
-    /** An answer arrived while a run was going; take it up when that run ends. */
     needsStudy: false,
     augment: true,
     seed: 1,
 };
 const el = {
+    stage: element('stage'),
+    pic: element('pic'),
     picture: element('picture'),
     picEmpty: element('picEmpty'),
     says: element('says'),
     sub: element('sub'),
+    tell: element('tell'),
+    list: element('list'),
+    tellBtn: element('tellBtn'),
     answers: element('answers'),
-    newThing: element('newThing'),
-    newName: element('newName'),
-    newBtn: element('newBtn'),
     controls: element('controls'),
     progress: element('progress'),
     studying: element('studying'),
     confusedChart: element('confusedChart'),
     rightChart: element('rightChart'),
-    mixChart: element('mixChart'),
+    knowsChart: element('knowsChart'),
     filtersChart: element('filtersChart'),
     mapsChart: element('mapsChart'),
     passes: element('passes'),
     sureInput: element('sure'),
     augment: element('augment'),
+    more: element('more'),
     card: element('card'),
     saveBtn: element('saveBtn'),
     loadBtn: element('loadBtn'),
@@ -138,10 +176,7 @@ function toast(message) {
         el.toast.hidden = true;
     }, 4200);
 }
-/**
- * The big line. Built from text nodes rather than markup, because the names come
- * from the person typing and a name is not a place to put HTML.
- */
+/** Built from text nodes rather than markup: the names are typed by a person. */
 function say(lead, strong, tail) {
     el.says.textContent = '';
     el.says.append(lead);
@@ -165,30 +200,56 @@ function but(text, kind, onClick) {
  * What it knows
  * ------------------------------------------------------------------ */
 function namedSamples() {
-    return state.samples.filter((s) => s.label !== null);
+    return state.samples.filter((s) => s.labels.length > 0);
 }
-/** The names that actually have a picture behind them — the ones worth guessing. */
+/** The names that have at least one picture behind them. */
 function knownNames() {
     const named = namedSamples();
-    return state.names.filter((name) => named.some((s) => s.label === name));
+    return state.names.filter((name) => named.some((s) => s.labels.includes(name)));
 }
 function learnNames() {
     for (const sample of state.samples) {
-        if (sample.label && !state.names.includes(sample.label))
-            state.names.push(sample.label);
+        for (const name of sample.labels)
+            if (!state.names.includes(name))
+                state.names.push(name);
     }
 }
-function guessFor(sample) {
+/** How many pictures each name appears in — its support, worth showing plainly. */
+function labelCounts() {
+    const counts = new Map();
+    for (const sample of namedSamples()) {
+        for (const name of sample.labels)
+            counts.set(name, (counts.get(name) ?? 0) + 1);
+    }
+    return counts;
+}
+/**
+ * Look at a picture once and report everything it can see, plus its strongest
+ * answer whether or not that answer clears the bar.
+ *
+ * One call, one forward pass: the network is the expensive part here and the page
+ * would otherwise ask twice for the same picture on every redraw.
+ */
+function look(sample) {
     const model = state.model;
     const classes = state.file?.classes ?? [];
-    if (!model || classes.length < 2)
-        return null;
+    if (!model || !sample || classes.length === 0)
+        return { sees: [], best: null };
     const probs = model.predict(sample.pixels);
-    let best = 0;
-    for (let j = 1; j < classes.length; j++)
-        if (probs[j] > probs[best])
-            best = j;
-    return { name: classes[best] ?? '', sure: probs[best] ?? 0 };
+    const found = [];
+    let bestIndex = -1;
+    let bestSure = -1;
+    for (let j = 0; j < classes.length; j++) {
+        if (probs[j] >= state.sure)
+            found.push({ name: classes[j], sure: probs[j] });
+        if (probs[j] > bestSure) {
+            bestSure = probs[j];
+            bestIndex = j;
+        }
+    }
+    found.sort((a, b) => b.sure - a.sure);
+    const best = bestIndex >= 0 && bestSure > 0.05 ? { name: classes[bestIndex], sure: bestSure } : null;
+    return { sees: found, best };
 }
 /* ------------------------------------------------------------------ *
  * The stage
@@ -196,27 +257,24 @@ function guessFor(sample) {
 function render() {
     const named = namedSamples();
     const names = knownNames();
-    const confident = state.guess !== null && state.guess.sure >= state.sure;
     // Drawn first and unconditionally: it read as a stale line whenever one of the
     // branches below returned early without refreshing it.
     renderProgress();
-    // The picture.
     el.picture.hidden = state.current === null;
     el.picEmpty.hidden = state.current !== null;
     if (state.current)
         el.picture.src = state.current.thumb;
-    // Everything else is rebuilt, because there is only ever one moment on screen.
     el.answers.textContent = '';
     el.controls.textContent = '';
-    el.newThing.hidden = true;
+    el.tell.hidden = true;
     if (state.stage === 'start') {
         say('Show me a picture.');
         el.sub.textContent =
             names.length < 2
                 ? `I ${named.length === 0 ? "don't know anything yet" : `only know ${listWords(names)} so far`}. ` +
-                    'Show me one and tell me what it is, and I will start learning. I need at least two different things before I can tell them apart.'
+                    'Show me one and list everything you can see in it. I need at least two different things before I can tell them apart.'
                 : `I know ${names.length} things — ${listWords(names)} — from ${named.length} ${plural(named.length, 'picture', 'pictures')}. ` +
-                    'Show me a picture and I will try to guess what it is.';
+                    'Show me a picture and I will say what I can see in it.';
         el.answers.append(but('Choose a picture', 'primary', () => choosePicture()));
         if (named.length === 0) {
             el.controls.append(but('No pictures handy? Let it practise on 90 drawn shapes', 'ghost', () => void practise()));
@@ -224,43 +282,41 @@ function render() {
         return;
     }
     if (state.stage === 'ready') {
+        const said = state.current?.labels ?? [];
         say('Thanks — I will remember that.');
         el.sub.textContent =
-            names.length < 2
-                ? `That was ${names[0] ?? 'a new thing'}. Now show me something different — two things is the least I can tell apart.`
-                : `I have now seen ${named.length} ${plural(named.length, 'picture', 'pictures')} of ${names.length} things. ` +
-                    'Show me another and I will try to guess it.';
+            said.length > 0
+                ? `I have noted ${listWords(said)}. I now know ${names.length} ${plural(names.length, 'thing', 'things')} ` +
+                    `from ${named.length} ${plural(named.length, 'picture', 'pictures')}. Show me another — drag one onto the ` +
+                    'box, or press the button.'
+                : 'Show me another picture.';
         el.answers.append(but('Show me another picture', 'primary', () => another()));
         return;
     }
     // stage === 'asking'
-    if (state.guess && confident) {
-        say('I think this is ', state.guess.name, ' — am I right?');
-        el.sub.textContent = "If I'm wrong, just tap the right name.";
+    if (state.sees.length > 0) {
+        say('I can see ', listWords(state.sees.map((s) => s.name)), '.');
+        el.sub.textContent = 'List everything you can see in it, separated by commas — I will remember all of it.';
+        el.answers.append(but('Yes — that is what I see', '', () => void answer(state.sees.map((s) => s.name))));
     }
-    else if (state.guess) {
-        say('I am not sure, but this might be ', state.guess.name, '.');
-        el.sub.textContent = 'What is it really?';
+    else if (state.best) {
+        // Naming the strongest answer even when it is unsure is not a hedge: the
+        // confidence line is the person's to move, and "I do not know" tells them
+        // nothing about which way it leans.
+        const percent = Math.round(state.best.sure * 100);
+        say('I am not sure yet — my best guess is ', state.best.name, `, and I am only ${percent}% on that.`);
+        el.sub.textContent = 'List everything you can see in it, separated by commas. That is what I learn from.';
     }
     else {
-        say('I do not know what this is yet.');
+        say('I do not know what is in this picture yet.');
         el.sub.textContent =
             names.length < 2
-                ? 'Tell me what it is, and show me a second kind of thing too — two is the least I can tell apart.'
-                : 'Tell me what it is, and I will remember it.';
+                ? 'List everything you can see, and show me a second kind of picture too — two things is the least I can tell apart.'
+                : 'List everything you can see in it, separated by commas.';
     }
-    // Every name it knows, with its own guess marked as the likely one.
-    for (const name of names) {
-        const isGuess = state.guess !== null && state.guess.name === name && confident;
-        el.answers.append(but(isGuess ? `${name} ✓` : name, isGuess ? 'guess' : '', () => void answer(name)));
-    }
-    el.answers.append(but('Something new…', 'ghost', () => showNewName()));
+    el.tell.hidden = false;
+    el.list.value = '';
     el.controls.append(but('Show me a different picture', 'ghost', () => another()));
-}
-function showNewName() {
-    el.newThing.hidden = false;
-    el.newName.value = '';
-    el.newName.focus();
 }
 function renderProgress() {
     const named = namedSamples();
@@ -269,10 +325,13 @@ function renderProgress() {
         el.progress.textContent = "I haven't seen any pictures yet.";
         return;
     }
+    const counts = labelCounts();
     el.progress.textContent = '';
     el.progress.append(`I know ${names.length} ${plural(names.length, 'thing', 'things')} — `);
     const bold = document.createElement('b');
-    bold.textContent = listWords(names);
+    // The count sits beside each name, because "I know 2 things from 2 pictures"
+    // hides the interesting part: which one has a single picture behind it.
+    bold.textContent = names.map((n) => `${n} (${counts.get(n) ?? 0})`).join(', ');
     el.progress.append(bold, ` — from ${named.length} ${plural(named.length, 'picture', 'pictures')}.`);
 }
 /* ------------------------------------------------------------------ *
@@ -292,7 +351,8 @@ function choosePicture() {
 }
 function another() {
     state.current = null;
-    state.guess = null;
+    state.sees = [];
+    state.best = null;
     state.stage = 'start';
     render();
     choosePicture();
@@ -302,42 +362,54 @@ async function showPicture(file) {
         const decoded = await decodeFile(file);
         state.current = {
             id: newId(),
-            label: null,
+            labels: [],
             thumb: decoded.thumb,
             pixels: decoded.pixels,
             name: file.name,
             addedAt: new Date().toISOString(),
             origin: 'file',
         };
-        state.guess = guessFor(state.current);
+        const now = look(state.current);
+        state.sees = now.sees;
+        state.best = now.best;
         state.stage = 'asking';
         render();
+        el.list.focus();
     }
     catch {
         toast('That file could not be read as a picture.');
     }
 }
-async function answer(name) {
+async function answer(labels) {
     const sample = state.current;
-    const clean = name.trim().toLowerCase();
-    if (!sample || clean === '')
+    if (!sample)
         return;
-    if (!state.names.includes(clean))
-        state.names.push(clean);
-    sample.label = clean;
+    if (labels.length === 0) {
+        toast('List at least one thing you can see in it.');
+        el.list.focus();
+        return;
+    }
+    for (const name of labels)
+        if (!state.names.includes(name))
+            state.names.push(name);
+    sample.labels = labels;
     if (!state.samples.includes(sample))
         state.samples.push(sample);
     await store.putSample(sample);
-    state.guess = null;
+    state.sees = [];
+    state.best = null;
     state.stage = 'ready';
     render();
     study();
 }
 async function practise() {
+    // The drawn pictures are honest multi-label examples: every one is a shape in a
+    // colour, so a blue circle is both "circle" and "blue", and every picture gets
+    // reused by both answers.
     const drawn = makeSampleSet(30, 7);
     const added = drawn.map((item) => ({
         id: newId(),
-        label: item.label,
+        labels: [item.label, item.colour],
         thumb: item.thumb,
         pixels: item.pixels,
         name: item.name,
@@ -347,25 +419,24 @@ async function practise() {
     state.samples.push(...added);
     learnNames();
     await store.putSamples(added);
-    toast('Drew 90 pictures — circles, squares and triangles — and told it what they are. Watch it learn.');
+    toast('Drew 90 pictures — each is a shape on a coloured background, so every one of them teaches two things at once.');
     render();
     study();
 }
 /**
  * Study, in the background.
  *
- * This used to block the page on "Studying…". The measurement is blunt about why
- * that was wrong: 12 passes took 6 seconds and got 6 of 9 on pictures it had
- * never seen, and 60 passes took 27 seconds and got 8 of 9. Capping the wait is
- * what left it guessing at chance — and asking somebody to sit through half a
- * minute after every picture is not a page anyone would use. So it studies on its
+ * The measurement is blunt: 12 passes took 6 seconds and got 6 of 9 on pictures it
+ * had never seen, while 60 passes took 26 seconds and got 8-9 of 9. Capping the
+ * wait is what left it guessing at chance, and asking somebody to sit through half
+ * a minute after every picture is not a page anyone would use. So it studies on its
  * own thread, the page never waits, and because each run continues from the last
- * set of weights the improvement simply accumulates.
+ * set of weights the improvement accumulates.
  */
 function study() {
     const named = namedSamples();
     const names = knownNames();
-    // One thing is not a classification problem. The stage explains that instead.
+    // One thing is not something you can tell apart from anything.
     if (named.length < 2 || names.length < 2)
         return;
     // Already studying: remember there is newer work and take it up when this run
@@ -376,7 +447,7 @@ function study() {
     }
     const samples = named.map((s) => ({
         id: s.id,
-        classIndex: names.indexOf(s.label),
+        targets: s.labels.map((name) => names.indexOf(name)).filter((index) => index >= 0),
         pixels: s.pixels,
     }));
     const previous = state.file && startsWith(state.file.classes, names) ? state.file : null;
@@ -401,7 +472,6 @@ function study() {
         },
     });
 }
-/** The small line that says it is still working, so the wait is never silent. */
 function renderStudying() {
     if (!state.studying) {
         el.studying.hidden = true;
@@ -410,7 +480,7 @@ function renderStudying() {
     el.studying.hidden = false;
     el.studying.textContent = state.model
         ? `Still studying — pass ${state.currentPass} of ${state.plannedPasses}. It keeps getting better while you carry on.`
-        : `Studying the pictures. I will start guessing in a moment — pass ${state.currentPass} of ${state.plannedPasses}.`;
+        : `Studying the pictures. I will start saying what I can see in a moment — pass ${state.currentPass} of ${state.plannedPasses}.`;
 }
 function handleMessage(message) {
     switch (message.type) {
@@ -423,8 +493,8 @@ function handleMessage(message) {
             state.history.push(message.metric);
             renderStudying();
             // Only the curves, on purpose. The filter and activation pictures each need a
-            // forward pass through the network, and doing that on every pass would slow
-            // the studying down for a picture nobody is looking at yet.
+            // forward pass, and doing that on every pass slows the studying down for a
+            // picture nobody is looking at yet.
             renderCurves();
             return;
         case 'done':
@@ -436,9 +506,11 @@ function handleMessage(message) {
                 state.needsStudy = false;
                 study();
             }
-            else if (state.stage === 'asking' && state.current && state.current.label === null) {
-                // It got better while the picture sat on the stage — so say what it thinks now.
-                state.guess = guessFor(state.current);
+            else if (state.stage === 'asking' && state.current && state.current.labels.length === 0) {
+                // It got better while the picture sat on the stage — so say what it sees now.
+                const now = look(state.current);
+                state.sees = now.sees;
+                state.best = now.best;
                 render();
             }
             return;
@@ -478,11 +550,16 @@ async function forgetEverything() {
     state.file = null;
     state.history = [];
     state.current = null;
-    state.guess = null;
+    state.sees = [];
+    state.best = null;
     state.stage = 'start';
     render();
     renderCard();
     renderCharts();
+    // Closing the panel puts the page back to how it looked on the first visit, and
+    // the button that was just pressed is inside it — so leaving it open would answer
+    // "forget everything" with a still-open drawer of settings about nothing.
+    el.more.open = false;
     toast('It has forgotten everything — the pictures and everything it learned.');
 }
 function saveToFile() {
@@ -495,7 +572,7 @@ function saveToFile() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `vision-demo-memory-${stamp}.json`;
+    link.download = `vision-ml-demo-memory-${stamp}.json`;
     document.body.appendChild(link);
     link.click();
     link.remove();
@@ -505,8 +582,14 @@ function saveToFile() {
 async function loadFromFile(file) {
     try {
         const parsed = JSON.parse(await file.text());
-        if (parsed.format !== 'vision-demo-model')
+        // Both ids are accepted: the project was renamed after this file format was
+        // already in use, and a memory somebody saved to disk is theirs, not ours to
+        // invalidate over a name.
+        if (parsed.format !== 'vision-ml-demo-model' && parsed.format !== 'vision-demo-model') {
             throw new Error('That is not one of these files.');
+        }
+        if (parsed.version !== MODEL_VERSION)
+            throw new Error('That memory was saved by an older version and cannot be read.');
         adopt(parsed);
         render();
         toast(`Loaded — it remembers ${parsed.classes.length} things.`);
@@ -521,34 +604,36 @@ function renderCard() {
         return;
     }
     const named = namedSamples();
-    const when = new Date(state.file.meta.updatedAt);
+    const counts = state.file.meta.perClassCount ?? [];
+    const thinnest = counts.length > 0 ? Math.min(...counts) : 0;
     el.card.textContent =
         `It knows ${state.file.classes.length} things (${state.file.classes.join(', ')}) from ${named.length} pictures, ` +
-            `and has studied ${state.file.meta.epochsTrained} times in total. Saved in this browser, and last changed ${when.toLocaleString()}.`;
+            `and has studied ${state.file.meta.epochsTrained} times in total. ` +
+            `The thinnest thing has ${thinnest} ${plural(thinnest, 'picture', 'pictures')} behind it. Saved in this browser.`;
 }
 /* ------------------------------------------------------------------ *
  * Charts
  * ------------------------------------------------------------------ */
 function renderCharts() {
     renderCurves();
+    renderKnows();
     renderModelPictures();
 }
-/** The two line charts. Cheap, so these can be redrawn on every epoch. */
 function renderCurves() {
     const accent = getComputedStyle(document.body).getPropertyValue('--accent').trim() || '#a78bfa';
     const yellow = getComputedStyle(document.body).getPropertyValue('--yellow').trim() || '#fbbf24';
     drawLine(el.confusedChart, {
         series: [
             { values: state.history.map((m) => m.loss), color: accent, label: 'while studying' },
-            { values: state.history.map((m) => m.valLoss), color: yellow, label: 'on pictures it had not seen' },
+            { values: state.history.map((m) => m.valLoss), color: yellow, label: 'on pictures held back' },
         ],
         emptyTitle: 'This line is drawn as it studies.',
-        emptyHint: 'Show it a picture and tell it what the picture is.',
+        emptyHint: 'Show it a picture and list what you can see in it.',
     });
     drawLine(el.rightChart, {
         series: [
             { values: state.history.map((m) => m.trainAccuracy), color: accent, label: 'pictures it studied' },
-            { values: state.history.map((m) => m.valAccuracy), color: yellow, label: 'pictures it had not seen' },
+            { values: state.history.map((m) => m.valAccuracy), color: yellow, label: 'pictures held back' },
         ],
         floor: 0,
         ceil: 1,
@@ -557,13 +642,22 @@ function renderCurves() {
         emptyHint: 'It needs at least two kinds of thing first.',
     });
 }
-/** The pictures of what it learned. Each one needs a forward pass, so these are
-    drawn only when the model or the picture on the stage actually changes. */
-function renderModelPictures() {
-    drawHeatmap(el.mixChart, state.file?.meta.confusion ?? [], state.file?.classes ?? [], state.file?.classes ?? [], {
-        emptyTitle: 'Nothing to mix up yet.',
-        emptyHint: 'Once it has guessed a few times, this shows where it went wrong.',
+/** How well it knows each thing — and how many pictures are behind that number. */
+function renderKnows() {
+    const classes = state.file?.classes ?? [];
+    const accuracy = state.file?.meta.perClassAccuracy ?? [];
+    const counts = state.file?.meta.perClassCount ?? [];
+    drawBars(el.knowsChart, classes.map((name, index) => ({
+        label: name,
+        value: accuracy[index] ?? 0,
+        caption: `${Math.round((accuracy[index] ?? 0) * 100)}% · ${counts[index] ?? 0} ${plural(counts[index] ?? 0, 'picture', 'pictures')}`,
+    })), {
+        max: 1,
+        emptyTitle: 'Nothing to score yet.',
+        emptyHint: 'Once it has studied, this shows how well it knows each thing.',
     });
+}
+function renderModelPictures() {
     // Computed once: it is a pass over the first layer's weights, not a free read.
     const filters = state.model ? state.model.conv1Filters() : null;
     drawTiles(el.filtersChart, filters ? filters.tiles : [], 3, {
@@ -575,7 +669,6 @@ function renderModelPictures() {
     });
     renderMaps();
 }
-/** The feature maps for whatever is on the stage — or the last picture it saw. */
 function renderMaps() {
     const picture = state.current ?? state.samples[state.samples.length - 1] ?? null;
     if (!picture) {
@@ -601,17 +694,12 @@ function renderMaps() {
  * Wiring
  * ------------------------------------------------------------------ */
 async function boot() {
-    el.newBtn.addEventListener('click', () => {
-        const name = el.newName.value.trim().toLowerCase();
-        if (name === '') {
-            toast('Type a name first.');
-            return;
+    el.tellBtn.addEventListener('click', () => void answer(parseLabels(el.list.value)));
+    el.list.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            void answer(parseLabels(el.list.value));
         }
-        void answer(name);
-    });
-    el.newName.addEventListener('keydown', (event) => {
-        if (event.key === 'Enter')
-            el.newBtn.click();
     });
     el.saveBtn.addEventListener('click', () => saveToFile());
     el.loadBtn.addEventListener('click', () => el.loadInput.click());
@@ -628,36 +716,84 @@ async function boot() {
         void store.saveSetting('passes', state.passes);
     });
     el.sureInput.addEventListener('change', () => {
-        state.sure = Math.max(0.3, Math.min(0.95, (Number(el.sureInput.value) || 55) / 100));
+        state.sure = Math.max(0.3, Math.min(0.95, (Number(el.sureInput.value) || 50) / 100));
         el.sureInput.value = String(Math.round(state.sure * 100));
         void store.saveSetting('sure', state.sure);
+        if (state.current) {
+            const now = look(state.current);
+            state.sees = now.sees;
+            state.best = now.best;
+        }
         render();
     });
     el.augment.addEventListener('change', () => {
         state.augment = el.augment.checked;
         void store.saveSetting('augment', state.augment);
     });
-    // A picture dropped anywhere on the window is the same as choosing one.
-    for (const type of ['dragover', 'drop']) {
-        window.addEventListener(type, (event) => event.preventDefault());
-    }
+    // Drag a picture anywhere onto the page. The box it will land in lights up, so
+    // the gesture is visible rather than something you have to already know about.
+    // The whole window is the target on purpose — aiming at one small rectangle is a
+    // fussy thing to ask of somebody.
+    el.pic.addEventListener('click', () => choosePicture());
+    el.pic.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            choosePicture();
+        }
+    });
+    const carriesFiles = (event) => Array.from(event.dataTransfer?.types ?? []).includes('Files');
+    // dragenter fires again for every element entered, so a depth count is what keeps
+    // the highlight on until the pointer actually leaves the page.
+    let dragDepth = 0;
+    window.addEventListener('dragenter', (event) => {
+        if (!carriesFiles(event))
+            return;
+        dragDepth += 1;
+        el.pic.classList.add('dragging');
+    });
+    window.addEventListener('dragover', (event) => {
+        if (!carriesFiles(event))
+            return;
+        // Without this the browser opens the dropped file instead of letting the page
+        // have it, and the drop event never arrives.
+        event.preventDefault();
+        if (event.dataTransfer)
+            event.dataTransfer.dropEffect = 'copy';
+    });
+    window.addEventListener('dragleave', () => {
+        dragDepth = Math.max(0, dragDepth - 1);
+        if (dragDepth === 0)
+            el.pic.classList.remove('dragging');
+    });
     window.addEventListener('drop', (event) => {
-        const file = event.dataTransfer?.files?.[0];
-        if (file && file.type.startsWith('image/'))
-            void showPicture(file);
+        dragDepth = 0;
+        el.pic.classList.remove('dragging');
+        event.preventDefault();
+        const files = Array.from(event.dataTransfer?.files ?? []);
+        const picture = files.find((f) => f.type.startsWith('image/'));
+        if (!picture) {
+            toast('That was not a picture.');
+            return;
+        }
+        // One at a time is the whole point of the page, so anything extra is left alone
+        // rather than queued up behind the person's back — but it is said out loud,
+        // because a drop that silently ignores a file looks like a failure.
+        if (files.length > 1)
+            toast(`One picture at a time — I used ${picture.name}.`);
+        el.stage.scrollIntoView({ block: 'nearest' });
+        void showPicture(picture);
     });
-    window.addEventListener('resize', () => {
-        renderCharts();
-    });
-    // Pick up where they left off.
+    window.addEventListener('resize', () => renderCharts());
+    // A rename must not strand what is already saved. See store.migrateLegacy.
+    const carried = await store.migrateLegacy().catch(() => ({ carried: 0, failed: true }));
     const [samples, model, passes, sure, augment] = await Promise.all([
         store.allSamples().catch(() => []),
         store.loadModel().catch(() => null),
         store.loadSetting('passes', 60),
-        store.loadSetting('sure', 0.55),
+        store.loadSetting('sure', 0.5),
         store.loadSetting('augment', true),
     ]);
-    state.samples = samples;
+    state.samples = samples.map((s) => ({ ...s, labels: s.labels ?? [] }));
     learnNames();
     state.passes = passes;
     state.sure = sure;
@@ -665,15 +801,27 @@ async function boot() {
     el.passes.value = String(passes);
     el.sureInput.value = String(Math.round(sure * 100));
     el.augment.checked = state.augment;
-    if (model) {
+    // A memory saved by the older single-answer version would load its weights happily
+    // and then answer nonsense, because those numbers mean something else now. Better
+    // to leave it behind and say so than to show confident rubbish.
+    if (model && model.version !== MODEL_VERSION) {
+        await store.clearModel();
+        toast('A memory from the older version was set aside. The pictures are still here.');
+    }
+    else if (model) {
         adopt(model);
-        state.stage = 'start';
         render();
         renderStudying();
-        toast(`Picked up where you left off — it remembers ${model.classes.length} things from ${samples.length} pictures.`);
+        toast(`Picked up where you left off — it knows ${model.classes.length} things from ${samples.length} pictures.`);
         return;
     }
     render();
     renderCharts();
+    if (carried.failed) {
+        toast('Something saved under the old name could not be brought across.');
+    }
+    else if (carried.carried > 0) {
+        toast(`Carried over ${carried.carried} ${plural(carried.carried, 'picture', 'pictures')} saved under the old name.`);
+    }
 }
 void boot();

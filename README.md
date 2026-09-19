@@ -1,8 +1,8 @@
-# vision-demo
+# vision-ml-demo
 
 Teach a small computer program to recognise your pictures, one picture at a time.
 
-A prototype for `vision-demo.nodejavascript.com`. **Not deployed** — it is a local
+A prototype for `vision-ml-demo.nodejavascript.com`. **Not deployed** — it is a local
 build with no analytics, no tracking, and no server behind it.
 
 ## Run it

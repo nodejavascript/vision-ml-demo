@@ -16,6 +16,12 @@
 import { pixelsFromCanvas, thumbFromCanvas } from './image.js';
 import { mulberry32 } from './net.js';
 export const SAMPLE_CLASS_LABELS = ['circle', 'square', 'triangle'];
+/** The eight colours a shape is allowed to be, by hue bucket. */
+const HUE_NAMES = ['red', 'orange', 'yellow', 'green', 'cyan', 'blue', 'purple', 'magenta'];
+function hueName(hue) {
+    const wrapped = ((hue % 360) + 360) % 360;
+    return HUE_NAMES[Math.round(wrapped / 45) % 8];
+}
 const CANVAS = 128;
 function hsl(h, s, l) {
     return `hsl(${Math.round(h)} ${Math.round(s)}% ${Math.round(l)}%)`;
@@ -43,7 +49,8 @@ export function makeSampleSet(perClass = 30, seed = 7) {
             const cx = CANVAS / 2 + (rng() - 0.5) * 26;
             const cy = CANVAS / 2 + (rng() - 0.5) * 26;
             const reach = 38 + rng() * 20;
-            ctx.fillStyle = hsl(hue + 120 + rng() * 120, 72, 58 + rng() * 10);
+            const shapeHue = hue + 120 + rng() * 120;
+            ctx.fillStyle = hsl(shapeHue, 72, 58 + rng() * 10);
             ctx.beginPath();
             if (label === 'circle') {
                 ctx.arc(cx, cy, reach * 0.52, 0, Math.PI * 2);
@@ -69,6 +76,7 @@ export function makeSampleSet(perClass = 30, seed = 7) {
             ctx.fill();
             out.push({
                 label,
+                colour: hueName(shapeHue),
                 pixels: pixelsFromCanvas(canvas),
                 thumb: thumbFromCanvas(canvas),
                 name: `${label}-${n + 1}.png`,

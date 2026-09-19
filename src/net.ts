@@ -183,6 +183,9 @@ export class Cnn {
   private probs: Float32Array;
   private readonly arg1: Int32Array;
   private readonly arg2: Int32Array;
+  /** The 0/1 truth vector for the sample being trained on right now. */
+  /** The 0/1 truth for the sample being graded, one entry per class. */
+  private target: Float32Array;
 
   // Gradients. Separate buffers from the activations, so nothing is written over
   // something that is still to be read.
@@ -238,6 +241,7 @@ export class Cnn {
     this.probs = new Float32Array(this.classes);
     this.arg1 = new Int32Array(CONV1 * this.q1 * this.q1);
     this.arg2 = new Int32Array(CONV2 * this.q2 * this.q2);
+    this.target = new Float32Array(this.classes);
 
     this.gLogits = new Float32Array(this.classes);
     this.gH = new Float32Array(this.hidden);
@@ -273,6 +277,7 @@ export class Cnn {
     this.logits = new Float32Array(next);
     this.probs = new Float32Array(next);
     this.gLogits = new Float32Array(next);
+    this.target = new Float32Array(next);
   }
 
   /* ---------------- forward ---------------- */
@@ -351,7 +356,10 @@ export class Cnn {
     dense(this.p2, this.flat, this.h, this.w3, this.b3, this.hidden);
     relu(this.h);
     dense(this.h, this.hidden, this.logits, this.w4, this.b4, this.classes);
-    softmax(this.logits, this.probs, this.classes);
+    // Independent yes/no per class, not a race between them. A softmax would force
+    // the answers to sum to one, which is exactly wrong when a picture can hold a
+    // dog AND a beach at the same time.
+    sigmoid(this.logits, this.probs, this.classes);
     return this.probs;
   }
 
@@ -362,14 +370,23 @@ export class Cnn {
 
   /* ---------------- backward ---------------- */
 
+  /** The 0/1 truth vector for a sample: 1 for every class it contains. */
+  private fillTarget(targets: number[]): void {
+    this.target.fill(0);
+    for (const j of targets) if (j >= 0 && j < this.classes) this.target[j] = 1;
+  }
+
   /**
-   * Given the gradient of the loss with respect to the logits, push it back
-   * through every layer and accumulate into `grad`.
+   * Push the gradient back through every layer, accumulating into `grad`.
+   *
+   * `fillTarget` must have been called for the sample in hand. For a sigmoid
+   * output with binary cross-entropy the gradient is prediction minus truth, per
+   * class — the same clean form softmax with cross-entropy gives, which is the
+   * reason the two pairs are always used together.
    */
-  private backward(target: number): void {
-    // d(loss)/d(logit) for softmax + cross-entropy is just p - onehot.
+  private backward(): void {
     for (let j = 0; j < this.classes; j++) {
-      this.gLogits[j] = this.probs[j] - (j === target ? 1 : 0);
+      this.gLogits[j] = this.probs[j] - this.target[j];
     }
 
     // dense out: dW = g (x) h, db = g, dh = W^T g
@@ -416,9 +433,12 @@ export class Cnn {
   /* ---------------- training ---------------- */
 
   /**
-   * One pass over the training images, in shuffled batches. Returns the mean
-   * cross-entropy loss and the fraction the model got right — the two numbers
-   * the page plots.
+   * One pass over the training pictures, in shuffled batches. Returns the mean
+   * binary cross-entropy and the fraction of the yes/no decisions it got right.
+   *
+   * Both are averaged over the classes as well as the pictures, so the numbers
+   * stay comparable as more things are added — a loss of 0.69 is "no idea at all",
+   * which is what it should read at the start however many classes there are.
    */
   trainEpoch(samples: TrainSample[], lr: number, useAugment: boolean, rng: () => number): { loss: number; accuracy: number } {
     const order = samples.map((_, i) => i);
@@ -438,11 +458,10 @@ export class Cnn {
         const sample = samples[order[k]];
         const pixels = useAugment ? augment(sample.pixels, this.size, rng) : sample.pixels;
         const probs = this.forward(pixels);
-        lossSum += -Math.log(Math.max(probs[sample.classIndex], 1e-9));
-        let best = 0;
-        for (let j = 1; j < this.classes; j++) if (probs[j] > probs[best]) best = j;
-        if (best === sample.classIndex) correct += 1;
-        this.backward(sample.classIndex);
+        this.fillTarget(sample.targets);
+        lossSum += this.binaryLoss(probs);
+        correct += this.labelAccuracy(probs);
+        this.backward();
       }
       this.applyGradients(1 / count, lr);
     }
@@ -451,16 +470,35 @@ export class Cnn {
     return { loss: lossSum / n, accuracy: correct / n };
   }
 
+  /** Binary cross-entropy for the current target, averaged over the classes. */
+  private binaryLoss(probs: Float32Array): number {
+    let total = 0;
+    for (let j = 0; j < this.classes; j++) {
+      const p = Math.min(Math.max(probs[j], 1e-7), 1 - 1e-7);
+      const y = this.target[j];
+      total += -(y * Math.log(p) + (1 - y) * Math.log(1 - p));
+    }
+    return total / this.classes;
+  }
+
+  /** How many of the yes/no decisions were right, over the classes. */
+  private labelAccuracy(probs: Float32Array): number {
+    let right = 0;
+    for (let j = 0; j < this.classes; j++) {
+      if ((probs[j] >= 0.5 ? 1 : 0) === this.target[j]) right += 1;
+    }
+    return right / this.classes;
+  }
+
   /** Loss and accuracy with the weights frozen and no augmentation. */
   evaluate(samples: TrainSample[]): { loss: number; accuracy: number } {
     let lossSum = 0;
     let correct = 0;
     for (const sample of samples) {
       const probs = this.forward(sample.pixels);
-      lossSum += -Math.log(Math.max(probs[sample.classIndex], 1e-9));
-      let best = 0;
-      for (let j = 1; j < this.classes; j++) if (probs[j] > probs[best]) best = j;
-      if (best === sample.classIndex) correct += 1;
+      this.fillTarget(sample.targets);
+      lossSum += this.binaryLoss(probs);
+      correct += this.labelAccuracy(probs);
     }
     const n = Math.max(1, samples.length);
     return { loss: lossSum / n, accuracy: correct / n };
@@ -506,33 +544,32 @@ export class Cnn {
     return { maps, max };
   }
 
-  /** Mean confidence across a set, for the model card. */
+  /** Mean confidence in each yes/no call — how far each sits from a coin toss. */
   meanConfidence(samples: TrainSample[]): number {
     if (samples.length === 0) return 0;
     let total = 0;
     for (const sample of samples) {
       const probs = this.predict(sample.pixels);
-      let best = 0;
-      for (let j = 1; j < this.classes; j++) if (probs[j] > probs[best]) best = j;
-      total += probs[best];
+      for (let j = 0; j < this.classes; j++) total += Math.max(probs[j], 1 - probs[j]);
     }
-    return total / samples.length;
+    return total / (samples.length * this.classes);
   }
 
   /* ---------------- save and load ---------------- */
 
-  serialize(classes: string[], history: EpochMetric[], images: number, confusion: number[][], meanConfidence: number, previous?: ModelFile | null): ModelFile {
+  serialize(classes: string[], history: EpochMetric[], images: number, perClassAccuracy: number[], perClassCount: number[], meanConfidence: number, previous?: ModelFile | null): ModelFile {
     const blobs = this.params.map((p) => encodeFloats(p.data));
     const meta = previous ? { ...previous.meta } : emptyMeta();
     meta.updatedAt = new Date().toISOString();
     meta.images = images;
     meta.parameters = this.parameterCount;
     meta.history = history.slice();
-    meta.confusion = confusion;
+    meta.perClassAccuracy = perClassAccuracy;
+    meta.perClassCount = perClassCount;
     meta.meanConfidence = meanConfidence;
     return {
-      format: 'vision-demo-model',
-      version: 1,
+      format: 'vision-ml-demo-model',
+      version: 2,
       classes: classes.slice(),
       sample: this.size,
       conv1: CONV1,
@@ -660,17 +697,8 @@ function convBackward(
   }
 }
 
-function softmax(logits: Float32Array, out: Float32Array, count: number): void {
-  let max = -Infinity;
-  for (let i = 0; i < count; i++) if (logits[i] > max) max = logits[i];
-  let sum = 0;
-  for (let i = 0; i < count; i++) {
-    const e = Math.exp(logits[i] - max);
-    out[i] = e;
-    sum += e;
-  }
-  const inv = sum > 0 ? 1 / sum : 0;
-  for (let i = 0; i < count; i++) out[i] *= inv;
+function sigmoid(logits: Float32Array, out: Float32Array, count: number): void {
+  for (let i = 0; i < count; i++) out[i] = 1 / (1 + Math.exp(-logits[i]));
 }
 
 /* ------------------------------------------------------------------ *

@@ -144,30 +144,28 @@ export class VisionTrainer {
         this.schedule();
     }
     /**
-     * Hold back some of every class, so the validation curve measures something
-     * other than memory. A class with fewer than five images keeps none of them —
-     * one image is not a test — and if nothing can be held back the page is told,
-     * because a validation number computed on the training set is a polite lie.
+     * Hold back some pictures so the accuracy figure means something.
+     *
+     * Stratifying gets harder once one picture can hold several things at once: a
+     * photo of a dog on a beach belongs to two classes at the same time. So this
+     * shuffles, holds back a slice, and then lends a picture back to the training set
+     * for any class that ended up entirely on the held-back side. A class with
+     * nothing to learn from is a class it can never get right, and the accuracy
+     * readout would say so forever.
      */
     split(payload) {
-        const groups = new Map();
-        for (const sample of payload.samples) {
-            const list = groups.get(sample.classIndex);
-            if (list)
-                list.push(sample);
-            else
-                groups.set(sample.classIndex, [sample]);
-        }
-        const train = [];
-        const watch = [];
-        for (const group of groups.values()) {
-            shuffle(group, this.rng);
-            const wanted = group.length >= 5 ? Math.max(1, Math.round(group.length * payload.validationSplit)) : 0;
-            const held = Math.min(wanted, Math.max(0, group.length - 2));
-            for (let i = 0; i < held; i++)
-                watch.push(group[i]);
-            for (let i = held; i < group.length; i++)
-                train.push(group[i]);
+        const all = payload.samples.slice();
+        shuffle(all, this.rng);
+        const room = Math.max(0, all.length - payload.classes.length);
+        const held = Math.min(Math.round(all.length * payload.validationSplit), room);
+        const watch = all.slice(0, held);
+        const train = all.slice(held);
+        for (let c = 0; c < payload.classes.length; c++) {
+            if (train.some((s) => s.targets.includes(c)))
+                continue;
+            const donor = watch.findIndex((s) => s.targets.includes(c));
+            if (donor >= 0)
+                train.push(watch.splice(donor, 1)[0]);
         }
         return { train, watch };
     }
@@ -204,19 +202,27 @@ export class VisionTrainer {
         this.running = false;
         const all = [...this.plan, ...this.watch];
         const size = payload.classes.length;
-        // The confusion matrix is read off the finished weights, over every image
-        // that has a label. Rows are the truth, columns are what it said.
-        const confusion = Array.from({ length: size }, () => new Array(size).fill(0));
-        for (const sample of all) {
-            const probs = net.predict(sample.pixels);
-            let best = 0;
-            for (let j = 1; j < size; j++)
-                if (probs[j] > probs[best])
-                    best = j;
-            if (sample.classIndex < size && best < size)
-                confusion[sample.classIndex][best] += 1;
+        // Per class, read off the finished weights over every picture that named it:
+        // how often it was right about that one thing. This replaces the confusion
+        // matrix, which no longer has a single "truth" to put on a row now that a
+        // picture can be several things at once.
+        const perClassAccuracy = [];
+        const perClassCount = [];
+        for (let c = 0; c < size; c++) {
+            let right = 0;
+            let positive = 0;
+            for (const sample of all) {
+                const truth = sample.targets.includes(c);
+                if (truth)
+                    positive += 1;
+                const said = net.predict(sample.pixels)[c] >= 0.5;
+                if (said === truth)
+                    right += 1;
+            }
+            perClassAccuracy.push(all.length > 0 ? right / all.length : 0);
+            perClassCount.push(positive);
         }
-        const weights = net.serialize(payload.classes, this.history, payload.samples.length, confusion, net.meanConfidence(all), payload.weights);
+        const weights = net.serialize(payload.classes, this.history, payload.samples.length, perClassAccuracy, perClassCount, net.meanConfidence(all), payload.weights);
         weights.meta.parameters = net.parameterCount;
         weights.meta.epochsTrained = (payload.weights?.meta.epochsTrained ?? 0) + this.epoch;
         const metric = this.last ?? { epoch: this.epoch, loss: 0, trainAccuracy: 0, valAccuracy: 0, valLoss: 0 };

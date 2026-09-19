@@ -19,8 +19,27 @@ import { mulberry32 } from './net.js';
 
 export const SAMPLE_CLASS_LABELS = ['circle', 'square', 'triangle'];
 
+/** The eight colours a shape is allowed to be, by hue bucket. */
+const HUE_NAMES = ['red', 'orange', 'yellow', 'green', 'cyan', 'blue', 'purple', 'magenta'];
+
+function hueName(hue: number): string {
+  const wrapped = ((hue % 360) + 360) % 360;
+  return HUE_NAMES[Math.round(wrapped / 45) % 8];
+}
+
 export interface GeneratedSample {
   label: string;
+  /**
+   * The colour of the shape, as a plain word.
+   *
+   * This is the second thing every drawn picture teaches, and it is what makes the
+   * practice set honestly multi-label: a circle drawn in blue is both "circle" and
+   * "blue", which is exactly the sort of thing a photograph of a dog on a beach
+   * teaches. It is taken from the shape's colour rather than the background's on
+   * purpose — the background is deliberately dark and desaturated, so naming its
+   * hue would be asking the model to learn something a person could not see either.
+   */
+  colour: string;
   pixels: Uint8Array;
   thumb: string;
   name: string;
@@ -56,7 +75,8 @@ export function makeSampleSet(perClass = 30, seed = 7): GeneratedSample[] {
       const cx = CANVAS / 2 + (rng() - 0.5) * 26;
       const cy = CANVAS / 2 + (rng() - 0.5) * 26;
       const reach = 38 + rng() * 20;
-      ctx.fillStyle = hsl(hue + 120 + rng() * 120, 72, 58 + rng() * 10);
+      const shapeHue = hue + 120 + rng() * 120;
+      ctx.fillStyle = hsl(shapeHue, 72, 58 + rng() * 10);
       ctx.beginPath();
 
       if (label === 'circle') {
@@ -80,6 +100,7 @@ export function makeSampleSet(perClass = 30, seed = 7): GeneratedSample[] {
 
       out.push({
         label,
+        colour: hueName(shapeHue),
         pixels: pixelsFromCanvas(canvas),
         thumb: thumbFromCanvas(canvas),
         name: `${label}-${n + 1}.png`,

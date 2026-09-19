@@ -56,5 +56,5 @@ const server = createServer(async (req, res) => {
 });
 
 server.listen(port, '127.0.0.1', () => {
-  console.log(`vision-demo on http://127.0.0.1:${port}/  (serving ${SITE})`);
+  console.log(`vision-ml-demo on http://127.0.0.1:${port}/  (serving ${SITE})`);
 });

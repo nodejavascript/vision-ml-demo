@@ -30,8 +30,12 @@ export const CONV2 = 16;
  * instead of a million characters of decimal.
  */
 export interface ModelFile {
-  format: 'vision-demo-model';
-  version: 1;
+  format: 'vision-ml-demo-model';
+  /**
+   * 2 = multi-label. Version 1 was a softmax over one label per picture, so its
+   * weights mean something entirely different and must not be loaded.
+   */
+  version: 2;
   classes: string[];
   sample: number;
   conv1: number;
@@ -51,9 +55,14 @@ export interface ModelMeta {
   parameters: number;
   /** Per-epoch history, so the charts can be redrawn from a recalled model. */
   history: EpochMetric[];
-  /** Final confusion matrix over the labelled set, row = truth, column = guess. */
-  confusion: number[][];
-  /** Mean confidence the model had on the set it was trained on. */
+  /**
+   * For each class, how often it was right about it, and how many pictures
+   * actually had it. Replaces the old confusion matrix: with a picture allowed to
+   * hold several things, there is no single "truth" to put on a row.
+   */
+  perClassAccuracy: number[];
+  perClassCount: number[];
+  /** How decided it is, on average, about each thing being there or not. */
   meanConfidence: number;
 }
 
@@ -65,7 +74,8 @@ export function emptyMeta(): ModelMeta {
     images: 0,
     parameters: 0,
     history: [],
-    confusion: [],
+    perClassAccuracy: [],
+    perClassCount: [],
     meanConfidence: 0,
   };
 }
@@ -84,7 +94,12 @@ export interface EpochMetric {
 
 export interface TrainSample {
   id: string;
-  classIndex: number;
+  /**
+   * Which of the classes this picture contains. One or more — that is the whole
+   * point of asking for a list rather than a single name: a photograph of a dog on
+   * a beach is honestly both, and it can teach two things at once.
+   */
+  targets: number[];
   pixels: Uint8Array;
 }
 
@@ -148,8 +163,8 @@ export type HostRequest =
 
 export interface Sample {
   id: string;
-  /** null until the visitor names it, or the model is confident enough to. */
-  label: string | null;
+  /** Everything the person said is in the picture. Empty until they say. */
+  labels: string[];
   /** A data URL, for the grid. Kept beside the pixels so a reload loses nothing. */
   thumb: string;
   /** SAMPLE × SAMPLE × 3, red first, 0–255. The model's actual view of the image. */
@@ -158,15 +173,4 @@ export interface Sample {
   addedAt: string;
   /** Where it came from: the visitor's disk, or the built-in sample set. */
   origin: 'file' | 'sample';
-}
-
-/** A prediction for one image. */
-export interface Prediction {
-  id: string;
-  probs: Float32Array;
-  topIndex: number;
-  topClass: string;
-  confidence: number;
-  /** True when the model is not confident enough to be worth believing. */
-  unsure: boolean;
 }

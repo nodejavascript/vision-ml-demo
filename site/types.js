@@ -23,7 +23,8 @@ export function emptyMeta() {
         images: 0,
         parameters: 0,
         history: [],
-        confusion: [],
+        perClassAccuracy: [],
+        perClassCount: [],
         meanConfidence: 0,
     };
 }

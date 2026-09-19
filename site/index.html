@@ -3,10 +3,10 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>vision-demo.nodejavascript.com</title>
+    <title>vision-ml-demo.nodejavascript.com</title>
     <meta
       name="description"
-      content="Show it one picture at a time. It guesses what it sees, you tell it what the picture is, and it remembers."
+      content="Show it one picture at a time and list everything you can see in it. It learns what you list and says what it can see."
     />
     <meta name="theme-color" content="#08050d" />
     <meta name="color-scheme" content="dark" />
@@ -32,7 +32,7 @@
           </svg>
         </span>
         <span>
-          <b>vision-demo</b>
+          <b>vision-ml-demo</b>
           <small>nodejavascript.com</small>
         </span>
       </a>
@@ -42,37 +42,41 @@
     <main>
       <h1>Teach it what it sees</h1>
       <p class="intro">
-        Show it one picture. It guesses what the picture is, you tell it what it really is, and it remembers — so the
-        next one it sees, it does a little better.
+        Show it one picture, then <b>list everything you can see in it, separated by commas</b> — a dog, a beach, the
+        sky. It remembers all of it, so one picture can teach several things at once, and the next picture it sees it
+        says what it can see.
       </p>
 
-      <!-- One thing at a time: the picture, what it says, and the answers. -->
+      <!-- One thing at a time: the picture, what it says, and your answer. -->
       <section class="stage" id="stage">
-        <div class="pic">
+        <div class="pic" id="pic" tabindex="0" role="button" title="Drag a picture here, or click to choose one">
           <img id="picture" alt="The picture you showed it" hidden />
           <div class="pic-empty" id="picEmpty">
-            <svg viewBox="0 0 48 48" width="44" height="44" aria-hidden="true">
+            <svg viewBox="0 0 48 48" width="40" height="40" aria-hidden="true">
               <g fill="none" stroke="currentColor" stroke-width="2">
                 <rect x="5" y="9" width="38" height="30" rx="4" />
                 <circle cx="17" cy="20" r="3.5" />
                 <path d="M8 34l10-10 8 8 6-5 8 7" />
               </g>
             </svg>
-            <p>No picture yet</p>
+            <p><b>Drag a picture here</b></p>
+            <p class="small">or <span class="linkish">choose one</span></p>
           </div>
         </div>
 
         <div class="talk">
           <p class="says" id="says">I don't know anything yet.</p>
-          <p class="sub" id="sub">Show me a picture and tell me what it is, and I'll start learning.</p>
+          <p class="sub" id="sub">Show me a picture and list everything you can see in it, and I'll start learning.</p>
 
-          <div class="answers" id="answers"></div>
-
-          <div class="newthing" id="newThing" hidden>
-            <input type="text" id="newName" placeholder="type a name — a person, an animal, a thing…" />
-            <button class="btn" id="newBtn" type="button">Use this name</button>
+          <div class="tell" id="tell" hidden>
+            <label class="tell-label" for="list">What can you see in it? List everything, separated by commas.</label>
+            <div class="tell-row">
+              <input type="text" id="list" placeholder="a dog, sand, the sea, sky" autocomplete="off" />
+              <button class="btn primary" id="tellBtn" type="button">Tell it</button>
+            </div>
           </div>
 
+          <div class="answers" id="answers"></div>
           <div class="row" id="controls"></div>
         </div>
       </section>
@@ -82,7 +86,10 @@
 
       <section class="card">
         <h2>How confused I am</h2>
-        <p class="note">It starts high and falls as it learns. Lower is better.</p>
+        <p class="note">
+          It starts at 0.69, which is the score for a coin toss on every question, and falls as it learns. Lower is
+          better.
+        </p>
         <canvas id="confusedChart" height="140"></canvas>
       </section>
 
@@ -90,14 +97,22 @@
       <details class="card more" id="more">
         <summary>More detail — the numbers, and how to keep it</summary>
 
+        <p class="why">
+          <b>Why listing everything is worth the trouble.</b> One picture that names four things gives four pieces of
+          teaching instead of one, and a picture gets reused by everything in it — so the same twenty photographs go a
+          great deal further. It is also how real image collections are labelled. Underneath, that means the network
+          answers a separate yes/no for each thing it knows rather than picking a single winner, which is why it can
+          answer with more than one thing at a time.
+        </p>
+
         <div class="grid2">
           <figure>
             <figcaption>How often it gets it right</figcaption>
             <canvas id="rightChart" height="150"></canvas>
           </figure>
           <figure>
-            <figcaption>What it mixes up — rows are the truth, columns are its answer</figcaption>
-            <canvas id="mixChart" height="190"></canvas>
+            <figcaption>How well it knows each thing — and the pictures behind it</figcaption>
+            <canvas id="knowsChart" height="200"></canvas>
           </figure>
           <figure>
             <figcaption>The shapes it looks for</figcaption>
@@ -115,8 +130,8 @@
             <input type="number" id="passes" min="2" max="80" step="1" value="60" />
           </label>
           <label>
-            Only guess when it is at least this sure
-            <input type="number" id="sure" min="30" max="95" step="5" value="55" />%
+            Only say it can see something at this confidence
+            <input type="number" id="sure" min="30" max="95" step="5" value="50" />%
           </label>
           <label class="check"><input type="checkbox" id="augment" checked /> Let it study slightly changed copies too (it learns better)</label>
         </div>
@@ -133,7 +148,7 @@
     </main>
 
     <footer class="foot">
-      <span><b>vision-demo</b> · a prototype on nodejavascript.com</span>
+      <span><b>vision-ml-demo</b> · a prototype on nodejavascript.com</span>
       <span>Every picture stays on this computer. Nothing is uploaded.</span>
     </footer>
 
