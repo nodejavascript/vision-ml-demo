@@ -10,7 +10,16 @@
     />
     <meta name="theme-color" content="#08050d" />
     <meta name="color-scheme" content="dark" />
-    <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+    <!--
+      The full icon set, part 15b of the family standard. The site had its own mark from the
+      first day, but shipped it as favicon.svg ONLY — so a bookmark, an older browser and an
+      iOS home screen each got nothing at all. The mark is unchanged; the SET is now complete.
+    -->
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+    <link rel="icon" href="./favicon.ico" sizes="any" />
+    <link rel="icon" sizes="32x32" href="./favicon-32.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png" />
+    <link rel="manifest" href="./manifest.webmanifest" />
     <!-- A prototype, doing everything on this machine. No analytics, no server. -->
     <link rel="stylesheet" href="./styles.css" />
     <script type="module" src="./app.js"></script>
