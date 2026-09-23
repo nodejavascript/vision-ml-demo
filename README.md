@@ -3,12 +3,17 @@
 Teach a small vision model what it sees, one picture at a time — in the browser, on your own
 machine.
 
-**Live at https://vision-ml-demo.nodejavascript.com/** — built to the family standard
+**Live at https://vision-ml-demo.nodejavascript.com/** · **source at
+https://github.com/nodejavascript/vision-ml-demo** — built to the family standard
 (`~/.copilot/instructions/nodejavascript-site-standard.md`): the Google tag is not in the page,
 the cookie gate is the only thing that may load it, the policy is a section of the page rather
 than a page of its own, and the identity is this site's own.
 
 ## Run it
+
+**Needs Node 22 or newer**, and a Chrome if you want the browser suite. There are **no runtime
+dependencies** — `npm install` brings in TypeScript and Playwright and nothing the page ships —
+so the whole thing runs offline once installed.
 
 ```bash
 npm install
@@ -40,8 +45,8 @@ The page has one shape now, and the older branches are history rather than instr
 
 | Branch | What it is |
 |---|---|
-| **`master`** | the simple one — one picture at a time, plain words, no numbers on the front of the page |
-| **`v1-full`** | the earlier detailed one — five sections, eight charts, every setting exposed |
+| **`master`** | the simple one — one picture at a time, plain words, no numbers on the front of the page — **the only branch published, here and on the forge** |
+| **`v1-full`** | the earlier detailed one — five sections, eight charts, every setting exposed — **kept on the machine this was built on, and deliberately not published**, so the sentence above is not sending anybody looking for a branch that is not there |
 
 Both share the same engine (`src/net.ts` and friends). Only the page differs.
 
@@ -242,8 +247,10 @@ Underneath, that is a multi-label network: a separate yes/no for each thing it k
 (`sigmoid` + binary cross-entropy) instead of one choice out of all of them
 (`softmax`). It is why the page can answer with more than one thing at a time.
 
-Measured on the 90 drawn shapes / 11 names: loss **0.85 → 0.13**, **85%** on
-pictures held back from training, **72–100%** per name.
+Measured on the **90-picture drawn set this page carried before 23 September 2026**, over 11
+names: loss **0.85 → 0.13**, **85%** on pictures held back from training, **72–100%** per name.
+The figures belong to that set — the twenty shapes the page ships now are a different set and are
+not what was measured here.
 
 ## How a name is read
 
@@ -275,14 +282,19 @@ that *sitting* is not a thing, so "a cat sitting on a wall" comes out as
 the noun ends — and the page echoes back every name it stored, so a bad one is visible
 immediately rather than buried in the vocabulary.
 
-No pictures handy? **The practise link queues the page's own drawn shapes** — ten of
-them, taken at even intervals across the set so all three shapes are represented, since
-the set is generated grouped by shape and the first ten would be ten circles. They are
-handed over as **files**, not pushed into the model: they queue, each is opened in turn,
-each is searched for faces, and every box is named by hand. Nothing is taught on your
-behalf — what you practise is the loop a real upload goes through, not a shortcut beside
-it. The offer is a small link just above the stage card, and it only appears while you
-have nothing named of your own.
+No pictures handy? **The practise link queues the page's own drawn shapes** — **twenty of
+them, two of each of ten kinds** (`src/samples.ts`). They are handed over as **files**, not
+pushed into the model: they queue, each is opened in turn, and each is named by hand. **The face
+finder is deliberately not run on them**, for the measured reason written down under *Where the
+practise set comes from*. Nothing is taught on your behalf — what you practise is the loop a real
+upload goes through, not a shortcut beside it.
+
+The offer is a small link just above the stage card, and **it is offered again**: at the start,
+and once more each time a run finishes, so somebody who practised once can get back to it. It
+used to appear only while nothing had been named and vanish as soon as a picture arrived, which
+left the set unreachable after the first use — George, 2026-09-19: *"where did the practise
+images go?"* Only the first line changes: *No pictures handy?* becomes *Want the practise set
+again?*
 
 **The drawn pictures are painted sharp, and that is a fix rather than a preference.**
 George, 2026-09-19: *"the test pictures should be sharper. getting too many boxes because of
@@ -293,7 +305,8 @@ along that gradient are exactly what the detector reads as skin. Painted at **22
 search's own width, so it is never resampled at all) and handed over as a **PNG**, the edge
 stays one pixel wide.
 
-Measured over the whole 90-picture set, four seeds, before and after:
+Measured over the whole **90-picture drawn set** the page used at the time, four seeds, before
+and after:
 
 | | before — 128 px, JPEG 0.72 | after — 224 px, PNG |
 |---|---|---|
@@ -368,6 +381,7 @@ framework, no matrix library, no runtime dependencies.
 | `src/consent.ts` | the cookie gate, and the only thing that may load Google's script |
 | `test/static.test.js` · `test/e2e.test.js` · `tools/verify-live-consent.mjs` | the unit suite, the browser suite, and the live check |
 | `tools/deploy.sh` | build → tests → publish → purge → smoke check → live check |
+| `THIRD-PARTY-NOTICES.md` | **generated** by `tools/build-cascade.mjs` — the notice the cascade's licence requires |
 | `src/app.ts` | the page |
 | `site/` | the hand-written page, plus **generated** JavaScript |
 
@@ -376,7 +390,30 @@ framework, no matrix library, no runtime dependencies.
 ## What is not here
 
 No accounts, no server, no upload, and no cookie except the optional Analytics one — which is not
-loaded until a visitor says yes. The repository is private: nothing links it from the page.
+loaded until a visitor says yes.
+
+**The repository is public** since 23 September 2026, and it is linked from this project's card on
+the family's index — [the card](https://nodejavascript.com/) · [the source](https://github.com/nodejavascript/vision-ml-demo).
+**The demo page itself links no repository**: a visitor who came to teach it a picture is not sent
+off to a git host to use it. That is a choice rather than an oversight, and it is the one place
+this page differs from its sibling `llm-demo`.
+
+## Licence and third-party notices
+
+**The repository is public so the work can be read, reviewed and run. That is not a licence.** No
+licence is granted by the code being visible: reading it does not carry a right to reuse it, and
+adding a licence file is a one-line decision for the owner which has not been made here.
+**Public and licensed are different things, and this file says which one this is rather than
+leaving a reader to assume.**
+
+**One part of this project is not written here, and it is redistributed under its own terms.**
+`haarcascade_frontalface_default.xml` — Rainer Lienhart's stump-based 24×24 frontal-face cascade,
+shipped with OpenCV — is packed into `src/cascade-data.ts`. Its licence permits redistribution
+**with the notice kept**, so the notice is kept twice: inside the generated file, and in
+[`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md), which `tools/build-cascade.mjs` writes out of
+the cascade's own licence block so the two cannot drift apart. Only the **trained numbers** are
+copied; the detector that reads them, `src/haar.ts`, is written here from the published algorithm,
+and its arithmetic was checked against OpenCV 4.10 before it was wired in.
 
 ## The deploy, and what happens next to it
 

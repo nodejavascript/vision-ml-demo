@@ -6,7 +6,7 @@
  *
  * `haarcascade_frontalface_default.xml` is the stump-based 24x24 AdaBoost face
  * detector created by Rainer Lienhart and shipped with OpenCV. It carries the
- * Intel licence (reproduced beside the generated file and in `src/cascade.ts`),
+ * Intel licence (reproduced beside the generated file and in `src/cascade-data.ts`),
  * which permits redistribution with the notice kept. The *detector* is not being
  * copied — only the trained numbers. `src/haar.ts` is written here, from the
  * published algorithm, and its arithmetic was checked against OpenCV 4.10 on the
@@ -189,10 +189,48 @@ export const RECT_WEIGHT = ${JSON.stringify(b64.f32(c.rectWeight))};
 `;
 
 await writeFile(OUT, file);
+
+// 🔴 THE NOTICE IS WRITTEN FROM THE CASCADE'S OWN TEXT, NOT TYPED — 23 September 2026.
+//
+// The licence permits redistributing this cascade **with the notice kept**, and a notice kept only
+// inside a GENERATED file is a notice a reader has to open the source to find. So the same block
+// that goes into `src/cascade-data.ts` is written here as well, and it comes from the cascade's own
+// comment rather than from anything typed into this repository — which is what stops the two from
+// drifting apart.
+const NOTICES = join(here, '..', 'THIRD-PARTY-NOTICES.md');
+const asText = licence(text).replace(/`/g, '\\`');
+
+const notices = `# Third-party notices
+
+This project redistributes one thing it did not create. **The notice is kept as its licence
+requires**, and it is kept twice on purpose: inside the generated file a reader may never open, and
+here, where a reader looks.
+
+## Rainer Lienhart's frontal-face cascade, as shipped with OpenCV
+
+| | |
+|---|---|
+| what it is | a stump-based 24×24 AdaBoost frontal-face detector |
+| where it came from | \`haarcascade_frontalface_default.xml\`, from OpenCV's \`data/haarcascades\` |
+| what is copied | the **trained numbers only** — ${c.stageThreshold.length} stages, ${c.stumpFeature.length} features, ${c.rectXYWH.length / 4} rectangles, packed as typed arrays |
+| what is not copied | the detector. \`src/haar.ts\` is written here from the published Viola-Jones algorithm, and its arithmetic was checked against OpenCV 4.10 before it was used |
+| how it is regenerated | \`npm run cascade\` — \`node tools/build-cascade.mjs [path-to-xml]\`, which writes both \`src/cascade-data.ts\` and this file |
+| why the numbers are packed | the XML is ~930 KB of pretty-printed decimal; emitted as typed arrays it is about 160 KB and every value goes back through the same \`Float32\` OpenCV stores it in |
+
+### The licence, exactly as the cascade file carries it
+
+\`\`\`
+${asText}
+\`\`\`
+`;
+
+await writeFile(NOTICES, notices);
+
 const bytes = Buffer.byteLength(file);
 process.stdout.write(
   `wrote ${OUT}\n` +
     `  ${c.stageThreshold.length} stages · ${c.stumpFeature.length} stumps · ` +
     `${c.featureRectFirst.length} features · ${c.rectXYWH.length / 4} rectangles\n` +
-    `  ${(bytes / 1024).toFixed(0)} KB of TypeScript from ${(text.length / 1024).toFixed(0)} KB of XML\n`,
+    `  ${(bytes / 1024).toFixed(0)} KB of TypeScript from ${(text.length / 1024).toFixed(0)} KB of XML\n` +
+    `wrote ${NOTICES}\n`,
 );
