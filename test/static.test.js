@@ -24,6 +24,7 @@ const html = read('index.html');
 const css = read('styles.css');
 const gate = read('consent.js');
 const app = read('app.js');
+const charts = read('charts.js');
 const samples = read('samples.js');
 const manifest = JSON.parse(read('manifest.webmanifest'));
 
@@ -180,8 +181,11 @@ test('the footer is brand · links · copyright, with the mother-site link exact
   assert.match(footer, /© 2026 vision-ml-demo\.nodejavascript\.com\. All rights reserved\./);
   assert.match(footer, /id="consentBtn"/, 'the footer carries the door to the cookie answer');
   assert.ok(!/back to top/i.test(footer), 'there is no Back to top in a footer');
-  // The repository is private, so nothing links it and no address is printed.
-  assert.ok(!/gitlab\.com|github\.com/.test(footer), 'a private repository must not be linked');
+  // ⚠️ THIS SAID "the repository is private, so nothing links it" — the repository went PUBLIC on
+  // 23 September 2026, so the reason changed while the rule did not: **this page still links no
+  // repository.** The project's card on `nodejavascript.com` carries the source link (part 11c); a
+  // visitor who came to teach it a picture is not sent to a git host to use it.
+  assert.ok(!/gitlab\.com|github\.com/.test(footer), 'the demo page links no repository — the card does');
 });
 
 test('the two cookie answers carry the same class, so neither can be made easier than the other', () => {
@@ -395,6 +399,48 @@ test('the page sends only the events the house standard asks for, and never what
   assert.match(gate, /'element_click'/);
   assert.match(gate, /'scroll_depth'/);
   assert.match(gate, /send_page_view: false/, 'or the landing is counted twice');
+});
+
+/* ------------------------------------------------------------------ *
+ * The numbers panel — the gutters the charts need, and one row per field
+ * ------------------------------------------------------------------ */
+
+test('the number and its unit are one field, not three rows of a grid', () => {
+  // 🔴 MEASURED 23 September 2026, George at an 801px window: *"the charts are crowded and have
+  // overlaps. the Only say it can see something at this confidence is wrapping"*. One shape caused
+  // that half: `.controls label` was a **grid**, and a grid gives EVERY child its own row — text
+  // nodes included. So the setting was the words, the box, and a bare `%` on a line of its own
+  // underneath (measured: y=1715, 1738, 1787), which also left the two settings different heights.
+  assert.match(
+    htmlNoComments,
+    /<span class="field"><input type="number" id="sure"[^>]*><span class="unit">%<\/span><\/span>/,
+    'the box and its unit belong to one field',
+  );
+  assert.match(css, /\.controls label \{[^}]*flex-direction: column/s, 'the label is a column: the words, then the field');
+  assert.match(css, /\.controls \.field \{[^}]*display: flex/s, 'the field keeps the box and the unit on one line');
+  assert.match(
+    css,
+    /\.controls label\.check \{[^}]*flex-direction: row/s,
+    'the checkbox is still a row — a column label centres it and drops its words onto the next line',
+  );
+});
+
+test('the charts measure their gutters instead of drawing over the plot', () => {
+  // 🔴 THE SAME REPORT, THE OTHER HALF. The plot used to span the whole canvas and the axis labels
+  // were drawn INTO it: `format(max)` sat on the top gridline with the series under it, `format(min)`
+  // shared the bottom corner with the legend, and the bars chart left a flat 52px for a caption that
+  // reads `100% · 2 pictures` and measures about 120px — so the number printed over the end of its
+  // own bar and the tail of it was clipped by the canvas edge. A gutter is a measurement, not a
+  // guess, and these assertions are about the measurement rather than about a pinned number.
+  assert.match(charts, /measureText\(format\(max\)\)/, 'the left gutter is sized from the widest axis label');
+  assert.match(charts, /const padLeft = axisWidth \+ \d+/, 'and the plot is inset by it');
+  assert.match(charts, /moveTo\(plot\.x, y\)/, 'the gridlines run across the plot, not across the labels');
+  assert.match(
+    charts,
+    /measureText\(i\.caption \?\? format\(i\.value\)\)\.width/,
+    'the caption gutter is measured from the captions themselves',
+  );
+  assert.doesNotMatch(charts, /const valueWidth = 52;/, 'a flat 52px for a 120px caption is the bug');
 });
 
 test('the finder runs on what a visitor brings, and not on the page’s own drawings', () => {

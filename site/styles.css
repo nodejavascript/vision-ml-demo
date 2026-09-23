@@ -467,13 +467,25 @@ canvas {
 .grid2 figcaption { color: var(--muted); font-size: 13px; margin-bottom: 6px; }
 
 .controls { display: flex; flex-wrap: wrap; gap: 14px 22px; margin: 20px 0 0; }
-.controls label { display: grid; gap: 4px; font-size: 13.5px; color: var(--muted); }
+/* 🔴 TWO ROWS BY CONSTRUCTION, NOT BY ACCIDENT — 23 September 2026. This was a `grid`, and a grid
+   makes EVERY child its own row — including text nodes. So the confidence setting was three rows:
+   the words, the box, and a bare `%` on a line of its own underneath it (measured at an 801px
+   window: y=1715, 1738, 1787), which also made the two settings different heights. A column says
+   what was meant: the words, then the field. */
+.controls label { display: flex; flex-direction: column; gap: 6px; font-size: 13.5px; color: var(--muted); }
+/* The number and its unit are one thing, and `.field` is what keeps them on one line. */
+.controls .field { display: flex; align-items: center; gap: 6px; }
+.controls .unit { font-size: 13.5px; color: var(--muted); }
 .controls input[type="number"] {
   width: 110px; padding: 8px 10px; font: inherit; font-size: 15px;
   color: var(--text); background: var(--surface-2);
   border: 1px solid var(--line); border-radius: 9px;
 }
-.controls label.check { display: flex; align-items: center; gap: 9px; grid-column: 1 / -1; }
+/* ⚠️ AND A ROW IS STILL A ROW: `.controls label` is a COLUMN now, so the checkbox needs to say
+   `row` explicitly. Without it the checkbox was centred by `align-items: center` in a column and
+   its words fell onto the next line — measured at an 801px window, and it is the kind of fault that
+   only shows up in a picture. */
+.controls label.check { flex-direction: row; align-items: center; gap: 9px; }
 .controls input[type="checkbox"] { width: 17px; height: 17px; accent-color: var(--accent); }
 
 .status {

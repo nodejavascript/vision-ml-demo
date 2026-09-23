@@ -243,6 +243,135 @@ test('the practise set hands over thirty shapes, and they go through the real lo
   await context.close();
 });
 
+/* ------------------------------------------------------ 23 September 2026 — the numbers panel
+
+🔴 THE CHARTS ARE READ FROM THEIR OWN PIXELS, BECAUSE THAT IS WHERE THE FAULT WAS.
+
+George, looking at this at an 801px window: *"the charts are crowded and have overlaps. the Only say
+it can see something at this confidence is wrapping"*. Both halves were arithmetic in `charts.ts` —
+the plot spanned the whole canvas and the axis labels, the note and the legend were all drawn INTO it,
+and the bars chart reserved a flat 52px for a caption that reads `100% · 2 pictures` and measures about
+120px, so the number printed over the end of its own bar. **None of that is visible to a source check**
+and none of it is visible to the unit suite: it exists only in the painted canvas, so the assertions
+below read the canvas.
+
+Two invariants, each one a sentence about the picture rather than about the code:
+  · the series never appears in the left gutter — there is room reserved for the labels;
+  · the caption is never drawn over the bar it belongs to. */
+test('the charts keep their labels out of the plot, and a number never sits on its own bar', async () => {
+  const { context, page, pageErrors, consoleErrors } = await openPage({ consent: 'denied' });
+  // The window George was looking at when he reported this.
+  await page.setViewportSize({ width: 801, height: 900 });
+
+  // Give the charts something to draw: the practise set, four pictures named.
+  await page.click('#aside .link');
+  await page.waitForFunction(() => document.getElementById('queue')?.textContent?.includes('of 30'), null, {
+    timeout: 20000,
+  });
+  for (const name of ['star', 'moon', 'star', 'heart']) {
+    await page.waitForSelector('#list', { state: 'visible', timeout: 20000 });
+    await page.fill('#list', name);
+    await page.click('#tellBtn');
+    await page.waitForTimeout(600);
+  }
+  await page.waitForTimeout(2500);
+
+  const found = await page.evaluate(() => {
+    const rgb = (value) => {
+      const hex = value.trim().replace('#', '');
+      return [0, 2, 4].map((i) => parseInt(hex.slice(i, i + 2), 16));
+    };
+    const style = getComputedStyle(document.body);
+    const accent = rgb(style.getPropertyValue('--accent') || '#f97316');
+    const alt = rgb(style.getPropertyValue('--alt') || '#60a5fa');
+    const is = (r, g, b, target, slack = 26) =>
+      Math.abs(r - target[0]) <= slack && Math.abs(g - target[1]) <= slack && Math.abs(b - target[2]) <= slack;
+    const lum = (r, g, b) => 0.2126 * r + 0.7152 * g + 0.0722 * b;
+
+    /** Where the series colour first appears, and where the brightest text sits. */
+    const scan = (id, options = {}) => {
+      const canvas = document.getElementById(id);
+      const ctx = canvas.getContext('2d');
+      const { data, width, height } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      let firstSeries = null;
+      let lastSeries = null;
+      let firstBright = null;
+      for (let x = 0; x < width; x++) {
+        for (let y = 0; y < height; y++) {
+          const i = (y * width + x) * 4;
+          if (data[i + 3] < 200) continue;
+          const [r, g, b] = [data[i], data[i + 1], data[i + 2]];
+          if (is(r, g, b, accent) || is(r, g, b, alt)) {
+            if (firstSeries === null) firstSeries = x;
+            lastSeries = x;
+          }
+          if (options.bright && lum(r, g, b) > 215 && (firstBright === null || x < firstBright)) firstBright = x;
+        }
+      }
+      return { width, height, firstSeries, lastSeries, firstBright };
+    };
+
+    const line = scan('rightChart');
+    const bars = scan('knowsChart', { bright: true });
+
+    const sure = document.getElementById('sure');
+    const unit = sure.parentElement.querySelector('.unit');
+    const inputBox = sure.getBoundingClientRect();
+    const unitBox = unit ? unit.getBoundingClientRect() : null;
+
+    const checkLabel = document.querySelector('.controls label.check');
+    const checkRange = document.createRange();
+    checkRange.selectNodeContents(checkLabel);
+    const checkText = checkRange.getBoundingClientRect();
+    const checkBox = checkLabel.querySelector('input').getBoundingClientRect();
+
+    return {
+      line,
+      bars,
+      sure: {
+        parentIsField: sure.parentElement.classList.contains('field'),
+        // ⚠️ A MISSING ELEMENT IS AN ASSERTION, NOT A CRASH. The first version of this probe read
+        // `unit.getBoundingClientRect()` on an injected fault that removed the element and died with
+        // a TypeError — which fails the test for the wrong reason, and would have hidden the very
+        // fault it was written to catch.
+        hasUnit: Boolean(unit),
+        sameRow: unit ? Math.abs(inputBox.top + inputBox.height / 2 - (unitBox.top + unitBox.height / 2)) < 3 : false,
+        unitRightOfBox: unit ? unitBox.left >= inputBox.right - 1 : false,
+      },
+      check: {
+        height: Math.round(checkLabel.getBoundingClientRect().height),
+        textLines: Math.round(checkText.height / (parseFloat(getComputedStyle(checkLabel).lineHeight) || 20)),
+        boxInsideText: checkBox.top >= checkText.top - 2 && checkBox.bottom <= checkText.bottom + 2,
+      },
+    };
+  });
+
+  // 1 · the plot does not start at the canvas edge, and the series is not in the gutter.
+  assert.ok(found.line.firstSeries !== null, 'the line chart drew no series — this test would prove nothing');
+  assert.ok(
+    found.line.firstSeries >= 12,
+    `the line chart's series starts at x=${found.line.firstSeries}: the labels have no gutter of their own`,
+  );
+  // 2 · the caption is never over the bar: the brightest text (the caption, in the page's own white)
+  //     must begin after the last pixel of the bars (the accent).
+  assert.ok(found.bars.lastSeries !== null, 'the bars chart drew no bars — this test would prove nothing');
+  assert.ok(
+    found.bars.firstBright !== null && found.bars.firstBright > found.bars.lastSeries,
+    `a caption starts at x=${found.bars.firstBright} and the bars reach x=${found.bars.lastSeries} — the number is drawn on its own bar`,
+  );
+  // 3 · the number and its unit are one row, and the label is one line.
+  assert.equal(found.sure.parentIsField, true, 'the box and its % must share a field element');
+  assert.equal(found.sure.hasUnit, true, 'the % must be an element that can be measured, not a bare text node');
+  assert.equal(found.sure.sameRow, true, 'the % must sit on the same row as the box, not under it');
+  assert.equal(found.sure.unitRightOfBox, true, 'the % must follow the box, not precede it');
+  assert.equal(found.check.textLines, 1, 'the checkbox label must be ONE line, not words under a centred box');
+  assert.equal(found.check.boxInsideText, true, 'the checkbox must sit on its own text line');
+
+  assert.deepEqual(pageErrors, []);
+  assert.deepEqual(consoleErrors, []);
+  await context.close();
+});
+
 test('the background abstract is painted, not merely written down', async () => {
   // The unit suite reads the stylesheet; this reads the page a visitor actually gets, which
   // is the half that went wrong for the family — a rule satisfied in CSS nobody paints.

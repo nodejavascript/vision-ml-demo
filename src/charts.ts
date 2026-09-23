@@ -261,8 +261,54 @@ export function drawLine(canvas: HTMLCanvasElement, options: LineOptions): void 
   if (!Number.isFinite(max)) max = 1;
   const span = Math.max(1e-9, max - min);
 
-  const x = (i: number, n: number): number => (n === 1 ? 0 : (i / (n - 1)) * width);
-  const y = (v: number): number => height - 4 - ((v - min) / span) * (height - 14);
+  // 🔴 THE PLOT IS INSET, AND THE LABELS LIVE IN THE INSET — 23 September 2026. George, looking at
+  // this at an 801px window: *"the charts are crowded and have overlaps"*. He was right, and the
+  // cause was arithmetic: the plot spanned the whole canvas (`x` from 0 to `width`, `y` from 10 to
+  // `height - 4`) and the axis labels were then drawn INTO it — `format(max)` at y=12 sat on the top
+  // gridline with the series under it, `format(min)` shared the bottom corner with the legend, and
+  // the note was right-aligned on top of the curve. Everything the chart needed to say had nowhere
+  // of its own to be.
+  //
+  // So the gutters are measured first and the plot gets what is left:
+  //   · the LEFT gutter holds the two value labels, sized from the widest of them;
+  //   · the TOP gutter holds the note;
+  //   · the BOTTOM gutter holds the legend, and grows to one row per series when a single row will
+  //     not fit — which is what the old `offset = 36` hack was really about: it nudged the legend
+  //     right to dodge the axis minimum, and at 344px the two labels ran past the edge instead.
+  ctx.font = '11px system-ui, sans-serif';
+  const axisWidth = Math.round(
+    Math.max(ctx.measureText(format(max)).width, ctx.measureText(format(min)).width),
+  );
+  const padLeft = axisWidth + 10;
+  const legendRows =
+    drawn.length > 1
+      ? (() => {
+          const oneRow = drawn.reduce((n, s) => n + 12 + ctx.measureText(s.label).width + 14, 0);
+          return oneRow <= width - padLeft ? 1 : drawn.length;
+        })()
+      : 0;
+  const legendHeight = legendRows === 0 ? 0 : legendRows === 1 ? 20 : 16 * legendRows + 4;
+  const padTop = 20;
+  const plot = {
+    x: padLeft,
+    y: padTop,
+    w: Math.max(10, width - padLeft - 4),
+    h: Math.max(10, height - padTop - legendHeight),
+  };
+
+  // The grid, inside the plot rather than across the labels.
+  ctx.strokeStyle = t.line;
+  ctx.lineWidth = 1;
+  for (let i = 1; i < 4; i++) {
+    const y = Math.round(plot.y + (plot.h / 4) * i) + 0.5;
+    ctx.beginPath();
+    ctx.moveTo(plot.x, y);
+    ctx.lineTo(plot.x + plot.w, y);
+    ctx.stroke();
+  }
+
+  const x = (i: number, n: number): number => plot.x + (n === 1 ? 0 : (i / (n - 1)) * plot.w);
+  const y = (v: number): number => plot.y + plot.h - ((v - min) / span) * plot.h;
 
   for (const s of drawn) {
     ctx.strokeStyle = s.color;
@@ -290,26 +336,40 @@ export function drawLine(canvas: HTMLCanvasElement, options: LineOptions): void 
     ctx.fillStyle = t.muted;
     ctx.font = '11px system-ui, sans-serif';
     ctx.textAlign = 'right';
-    ctx.fillText(note, width - 6, 12);
+    ctx.fillText(note, width - 4, 13);
     ctx.textAlign = 'left';
   }
 
+  // The two value labels, in the gutter and level with the ends of the plot.
   ctx.fillStyle = t.muted;
   ctx.font = '11px system-ui, sans-serif';
-  ctx.fillText(format(max), 4, 12);
-  ctx.fillText(format(min), 4, height - 4);
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(format(max), padLeft - 6, plot.y + 1);
+  ctx.fillText(format(min), padLeft - 6, plot.y + plot.h - 1);
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
 
-  // A legend, because two lines without names is a puzzle.
-  if (drawn.length > 1) {
-    // Start clear of the axis minimum, which is drawn on the same baseline.
-    let offset = 36;
+  // A legend, because two lines without names is a puzzle — and one row per series when one row
+  // will not fit, rather than a row that runs off the right-hand edge.
+  if (legendRows > 0) {
     ctx.font = '11px system-ui, sans-serif';
+    let row = 0;
+    let offset = legendRows === 1 ? padLeft : 0;
     for (const s of drawn) {
+      const rowY = legendRows === 1
+        ? height - 8
+        : height - legendHeight + 10 + row * 16;
       ctx.fillStyle = s.color;
-      ctx.fillRect(offset, height - 14, 8, 3);
+      ctx.fillRect(offset, rowY - 4, 8, 3);
       ctx.fillStyle = t.muted;
-      ctx.fillText(s.label, offset + 12, height - 9);
-      offset += 12 + ctx.measureText(s.label).width + 14;
+      ctx.fillText(s.label, offset + 12, rowY + 1);
+      if (legendRows === 1) {
+        offset += 12 + ctx.measureText(s.label).width + 14;
+      } else {
+        row += 1;
+        offset = 0;
+      }
     }
   }
 }
@@ -335,7 +395,17 @@ export function drawBars(canvas: HTMLCanvasElement, items: BarItem[], options: {
   ctx.font = '12px system-ui, sans-serif';
   const labelWidth = Math.min(120, Math.max(56, ...items.map((i) => ctx.measureText(i.label).width + 10)));
   const rowHeight = Math.max(14, Math.min(30, height / items.length));
-  const valueWidth = 52;
+
+  // 🔴 AND THE CAPTION'S OWN GUTTER IS MEASURED TOO — 23 September 2026, George: *"the charts are
+  // crowded and have overlaps"*. This was a flat `52`, and the caption is not a value: it reads
+  // `100% · 2 pictures`, about **120px** at 11px monospace. So the bar was laid out to leave 60px for
+  // a 120px label and the two landed on top of each other — the number printed over the end of its
+  // own bar, and the tail of it clipped by the canvas edge. A gutter is a measurement, not a guess.
+  ctx.font = '11px ui-monospace, monospace';
+  const valueWidth = Math.round(Math.max(
+    34,
+    ...items.map((i) => ctx.measureText(i.caption ?? format(i.value)).width + 10),
+  ));
   const barWidth = Math.max(10, width - labelWidth - valueWidth - 8);
   const max = options.max ?? Math.max(1e-9, ...items.map((i) => i.value));
   // The rows are centred in whatever height the canvas turned out to be, rather
