@@ -1,26 +1,34 @@
 /* ============================================================
-   vision-ml-demo — the simple version, multi-label.
-   Same deep-purple family as llm-demo, and rag's spacing values
-   so the pages sit together: 940px column, 32/60 on main, 24px
-   cards with a bottom margin only, 26/20/40 footer.
+   vision-ml-demo — warm amber-orange, system fonts, no external assets.
+   Same page skeleton and spacing as llm-demo and rag-demo, and an identity of
+   its own: standard part 5 wants a colour, a background, a background image and
+   an Analytics id that no sibling has.
    ============================================================ */
 
 :root {
-  --bg: #08050d;
-  --bg-soft: #0e0817;
-  --surface: #140b22;
-  --surface-2: #1b102c;
-  --line: rgba(255, 255, 255, 0.09);
-  --border-strong: rgba(255, 255, 255, 0.16);
+  /* 🔴 THIS SITE'S OWN IDENTITY (standard part 5a/5b), claimed by running
+     `~/.nodejs_theme_register.py` and reading the TAKEN list — never chosen from
+     memory. The family had violet, indigo, blue, sky, emerald, lime, pink and
+     near-blacks; the orange was free, and it suits a page that draws shapes.
+     The bar and the page are the same hue, so the tab and the page agree. */
+  --bg: #1a0c02;
+  --bg-soft: #221004;
+  --surface: #26130a;
+  --surface-2: #301a0e;
+  --line: rgba(255, 246, 240, 0.1);
+  --border-strong: rgba(255, 246, 240, 0.18);
 
-  --text: #ece6f7;
-  --muted: #a89cc4;
+  --text: #f7ece4;
+  --muted: #c4a795;
 
-  --accent: #a78bfa;
-  --accent-deep: #8b5cf6;
-  --accent-soft: rgba(139, 92, 246, 0.14);
+  --accent: #f97316;
+  --accent-deep: #ea580c;
+  --accent-soft: rgba(249, 115, 22, 0.14);
 
-  --yellow: #fbbf24;
+  /* The second series on the charts, and the ring on the box being asked about.
+     It is a cool colour on a warm page on purpose: an amber second line beside an
+     orange first one is two lines a reader has to work to tell apart. */
+  --alt: #60a5fa;
   --danger: #f87171;
 
   --radius: 14px;
@@ -45,10 +53,45 @@ body {
   font-size: 16px;
   line-height: 1.6;
   background:
-    radial-gradient(1100px 600px at 12% -8%, rgba(139, 92, 246, 0.16), transparent 60%),
-    radial-gradient(900px 500px at 92% 4%, rgba(251, 191, 36, 0.07), transparent 62%),
-    linear-gradient(180deg, var(--bg) 0%, #0a0713 55%, var(--bg) 100%);
+    radial-gradient(1000px 560px at 10% -6%, rgba(249, 115, 22, 0.17), transparent 62%),
+    radial-gradient(820px 480px at 96% 2%, rgba(96, 165, 250, 0.08), transparent 60%),
+    radial-gradient(700px 420px at 50% 108%, rgba(234, 88, 12, 0.1), transparent 64%),
+    linear-gradient(180deg, var(--bg) 0%, #200f04 52%, var(--bg) 100%);
   background-attachment: fixed;
+  /* The cookie bar is fixed over the bottom of the page and takes the click, so the
+     page leaves exactly the bar's own height free while the question is up — measured
+     and written back by consent.js, and reset to zero the moment it is answered.
+     Without it the footer cannot be clicked until a visitor answers a question about
+     cookies, which is not a question anyone should have to answer to reach a link. */
+  padding-bottom: var(--consent-height, 0px);
+}
+
+/* 🔴 THE ABSTRACT — standard part 5d-ii, and the half the family missed for weeks.
+   Nine of ten sites painted a soft gradient wash and no geometry at all, and every one
+   of them passed the check, because a wash is made of gradients too. George, 19 Sep 2026:
+   *"the rest of the sites have lovely theme colors and gradients, but maybe missing the
+   extra touch of a background abstract."*
+
+   This site's drawing is a CHECKERBOARD — the tile a convolution walks over, which is the
+   one picture that belongs on a page about a network reading images. It is its own fixed
+   layer rather than an entry in body's gradient stack for one reason: a pattern has to
+   FADE, and nothing fades a background image except a mask. Masked here, the squares
+   dissolve before the fold, so there is no edge to see — and an edge is what part 5d is
+   written against. */
+.dvs-pattern {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image: conic-gradient(
+    rgba(249, 115, 22, 0.055) 0 25%,
+    rgba(0, 0, 0, 0) 25% 50%,
+    rgba(249, 115, 22, 0.055) 50% 75%,
+    rgba(0, 0, 0, 0) 75% 100%
+  );
+  background-size: 72px 72px;
+  -webkit-mask-image: radial-gradient(124% 80% at 50% 0%, #000 10%, rgba(0, 0, 0, 0) 78%);
+  mask-image: radial-gradient(124% 80% at 50% 0%, #000 10%, rgba(0, 0, 0, 0) 78%);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -70,7 +113,9 @@ body {
   display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
   gap: 14px;
   padding: 12px 20px;
-  background: rgba(8, 5, 13, 0.82);
+  /* The site's OWN near-black at 0.82 — part 5b does not stop at the page, and a bar
+     carrying another site's black makes two sites look like one product. */
+  background: rgba(26, 12, 2, 0.82);
   backdrop-filter: blur(14px);
   border-bottom: 1px solid var(--line);
 }
@@ -139,9 +184,12 @@ h1 { font-size: clamp(28px, 5vw, 40px); line-height: 1.1; letter-spacing: -0.5px
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45);
   cursor: pointer;
 }
+/* The box being asked about, and the box's number. Blue rather than the page's own
+   orange, so "this is the one I am asking about" cannot be confused with "this is the
+   page's colour". */
 .box.current {
-  border-color: var(--yellow);
-  box-shadow: 0 0 0 2px rgba(251, 191, 36, 0.3), 0 0 0 1px rgba(0, 0, 0, 0.45);
+  border-color: var(--alt);
+  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.3), 0 0 0 1px rgba(0, 0, 0, 0.45);
 }
 .box.done { border-color: rgba(255, 255, 255, 0.3); }
 
@@ -164,7 +212,7 @@ h1 { font-size: clamp(28px, 5vw, 40px); line-height: 1.1; letter-spacing: -0.5px
   background: var(--accent); color: #14092b;
   font-size: 11px; font-weight: 700; line-height: 15px; text-align: center;
 }
-.box.current .box-num { background: var(--yellow); }
+.box.current .box-num { background: var(--alt); }
 .box.done .box-num { background: rgba(255, 255, 255, 0.32); color: #0e0817; }
 
 .box-x {
@@ -206,6 +254,29 @@ h1 { font-size: clamp(28px, 5vw, 40px); line-height: 1.1; letter-spacing: -0.5px
 .pic-empty p.small { font-size: 13px; color: var(--muted); }
 .linkish { color: var(--accent); text-decoration: underline; }
 
+/* A control that reads as a link, for the two places the page offers one as a BUTTON:
+   the footer's cookie door and the settings offer inside the bar. Two of them drawn
+   differently is how a page starts looking unfinished. */
+.linkish {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  font-size: 13.5px;
+  color: inherit;
+  cursor: pointer;
+  text-decoration: none;
+}
+button.linkish:hover,
+button.linkish:focus-visible {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+/* The quiet paragraphs of the policy, and any other small print. */
+.muted { color: var(--muted); }
+.small { font-size: 13.5px; }
+
 .talk { min-width: 0; }
 
 /* Where you are in a run of pictures. Small and above the answer, because it is
@@ -246,7 +317,7 @@ h1 { font-size: clamp(28px, 5vw, 40px); line-height: 1.1; letter-spacing: -0.5px
 .who-face img {
   width: 100%; height: auto;
   border-radius: 10px;
-  border: 2px solid var(--yellow);
+  border: 2px solid var(--alt);
   object-fit: cover;
   background: #000;
 }
@@ -350,8 +421,12 @@ h1 { font-size: clamp(28px, 5vw, 40px); line-height: 1.1; letter-spacing: -0.5px
   border: 1px solid var(--line);
   background: rgba(20, 11, 34, 0.5);
 }
+/* The card's own headings, including the policy section's. */
 .card h2 { font-size: 17px; font-weight: 650; margin: 0 0 2px; }
 .card .note { color: var(--muted); font-size: 14px; margin: 0 0 14px; }
+.card h3 { font-size: 14.5px; font-weight: 650; margin: 20px 0 6px; }
+.card p { margin: 0 0 12px; }
+.card p:last-child { margin-bottom: 0; }
 
 canvas {
   display: block; width: 100%;
@@ -384,7 +459,10 @@ canvas {
 }
 .why b { color: var(--text); }
 
-.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; }
+/* `min(280px, 100%)` rather than a bare 280px: inside a card on a narrow phone the
+   inner width is under 280, and a track wider than its container is what pushed the
+   right-hand chart past the edge of the page. Measured at a 280px viewport. */
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr)); gap: 20px; }
 .grid2 figure { margin: 0; }
 .grid2 figcaption { color: var(--muted); font-size: 13px; margin-bottom: 6px; }
 
@@ -409,14 +487,166 @@ canvas {
 
 /* ---------- footer ---------- */
 
-.foot {
+/* Three lines, in this order: brand · links · copyright. The brand line carries the link
+   home and the links line does not repeat it — said twice in three lines, that is
+   redundancy rather than a second chance. The copyright states the origin in full, which
+   makes it the second place the domain appears in full. */
+.site-footer {
   border-top: 1px solid var(--line);
   padding: 26px 20px 40px;
-  display: flex; flex-direction: column; align-items: center; gap: 10px;
-  color: var(--muted); font-size: 13.5px;
   text-align: center;
+  color: var(--muted);
+  font-size: 13.5px;
 }
-.foot b { color: var(--text); }
+.footer-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+.footer-brand .mark { color: var(--accent); display: inline-flex; }
+.footer-brand b { color: var(--text); }
+.footer-brand a { color: var(--muted); }
+.footer-links { margin: 6px 0; }
+.footer-copy { margin: 10px 0 0; font-size: 12.5px; color: rgba(196, 167, 149, 0.75); }
+
+/* ---------- the cookie bar ----------
+
+   The same consent model as the rest of the family, in this page's colours. Three things
+   here are deliberate and should stay that way.
+
+   It sits in one row — the question, then the two answers — because a banner that stacks
+   into paragraphs is a banner people resent. The two answers carry the page's own `ghost`
+   class, so they are the same size, the same weight and the same distance from the reader:
+   no accept-first order, no smaller decline, and no colour that quietly says which one is
+   welcome. And the detail lives one link away rather than in the bar itself. */
+
+.consent {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 20;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 22px;
+  padding: 13px 20px;
+  background: rgba(38, 19, 10, 0.96);
+  border-top: 1px solid var(--line);
+  backdrop-filter: blur(8px);
+  /* It is the last thing on the screen, so it must never be taller than the screen. On a
+     short viewport — a phone in landscape is about 320px tall — the stacked layout could
+     otherwise grow past the top edge, and the part above it is fixed to the window: it
+     cannot be scrolled to and cannot be clicked. Capped and made scrollable, every part of
+     the question stays reachable. `dvh` is the height the browser actually gives the page
+     once its own toolbars are accounted for; `vh` stays first for anything that does not
+     know it. */
+  max-height: calc(100vh - 12px);
+  max-height: calc(100dvh - 12px);
+  overflow-y: auto;
+}
+.consentTitle {
+  flex: 0 0 auto;
+  margin: 0;
+  font-size: 14px;
+  color: var(--text);
+  white-space: nowrap;
+}
+.consentText {
+  flex: 1 1 300px;
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.consentActions {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  flex: 1 1 auto;
+  gap: 10px;
+}
+.consentActions button {
+  min-width: 0;
+  padding: 10px 14px;
+}
+/* An anchor does not inherit body colour, so a link dropped into new markup gets the
+   browser's default blue — which is out of place on this panel. Anything that wants to
+   look like this site has to say so. */
+.consentText a { color: var(--text); }
+
+/* The question and the longer answer share ONE fixed bar and swap places inside it,
+   rather than a second dialog opening over the first. That is not tidiness: this bar is
+   the element whose height is measured and reserved at the bottom of the page, and the
+   observer already follows it — so the taller view is measured like the shorter one
+   instead of guessed at. */
+.consentAsk {
+  flex: 1 1 320px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 22px;
+}
+.consentPrefs { flex: 1 1 100%; }
+/* The title's row, so the way out sits at the top right of the panel and not among the
+   answers at the bottom. A panel with no dismiss is a consent wall: somebody who opened
+   it to LOOK had to answer it again to get out. */
+.consentHead { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.consentClose {
+  flex: 0 0 auto;
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--muted);
+  font: inherit;
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 3px 10px;
+}
+.consentClose:hover, .consentClose:focus-visible { color: var(--text); border-color: var(--text); }
+/* The way to the longer answer, and quieter than the two answers on purpose: it is not a
+   third answer to the question, and it must not read as one. */
+.consentSettings { flex: 0 0 auto; color: var(--muted); }
+
+/* EVERY PURPOSE IS NAMED, and there is exactly one real choice to name: this site has no
+   strictly necessary cookie to describe, so it does not invent a row to look thorough. */
+.consentList { list-style: none; margin: 8px 0 0; padding: 0; }
+.consentRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+}
+.consentRow > div { flex: 1 1 260px; min-width: 0; }
+.consentRowName { margin: 0; font-size: 13px; font-weight: 600; color: var(--text); }
+.consentRowWhy { margin: 2px 0 0; font-size: 12px; line-height: 1.5; color: var(--muted); }
+
+/* The switch. Its ring is drawn from `aria-checked`, so what the eye sees and what a
+   screen reader announces are the same attribute and cannot drift apart — nothing in the
+   script toggles a class. The word beside it carries the state as well, because a state
+   shown only in colour is a state some readers cannot see. */
+.consentSwitch {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 6px 12px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--muted);
+  cursor: pointer;
+}
+.consentSwitch .consentDot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); }
+.consentSwitch[aria-checked="true"] { border-color: var(--accent); color: var(--text); }
+.consentSwitch[aria-checked="true"] .consentDot { background: var(--accent); }
 
 /* ---------- narrow ---------- */
 

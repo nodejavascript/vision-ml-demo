@@ -22,7 +22,7 @@ import { loadPicture } from './image.js';
 import type { Loaded } from './image.js';
 import { detectFaces } from './faces.js';
 import type { Box } from './faces.js';
-import { makeSampleFiles } from './samples.js';
+import { makeSampleFiles, PRACTISE_COUNT, SHAPE_NAMES } from './samples.js';
 import { VisionTrainer } from './trainer-host.js';
 import * as store from './store.js';
 import { drawBars, drawLine, drawProgress, drawTiles } from './charts.js';
@@ -250,13 +250,20 @@ const el = {
  * The run — pictures handed over together, face by face
  * ------------------------------------------------------------------ */
 
-/** How many photographs the practise link hands over, out of the whole set. */
-const PRACTISE_COUNT = 8;
+/**
+ * The file names the practise set handed over.
+ *
+ * Kept so a picture can say where it came from — a practise run and a visitor's own
+ * photographs lead to different answers about the same page — without the file name being
+ * read back at the moment it is named. The set's names are its own (`practise-01.png`), and
+ * nothing in a name says which shape is in the picture.
+ */
+const practiseFiles = new Set<string>();
 
-/** A picture waiting its turn, with the faces found in it. */
+/** A picture waiting its turn, with the boxes found in it. */
 interface Turn {
   picture: Loaded;
-  /** Empty means no face was found, so the whole picture gets named instead. */
+  /** Empty means nothing was found, so the whole picture gets named instead. */
   boxes: Box[];
 }
 
@@ -522,6 +529,16 @@ let clearedFor: Sample | null = null;
  */
 let freshStart = false;
 
+/**
+ * Whether the first model of this sitting has already been counted.
+ *
+ * `model_trained` is the demo's own conversion — "it learned something" is what this page
+ * is for — and it is sent once, when a model first exists, rather than on every study run.
+ * Sixty passes per picture is sixty events, and a number that moves for no reason is a
+ * number nobody reads.
+ */
+let trainedOnce = false;
+
 function render(): void {
   const named = namedSamples();
   const names = knownNames();
@@ -560,7 +577,7 @@ function render(): void {
           `Show me one and ${HOW_TO_LIST} ` +
           'I need at least two different things before I can tell them apart.'
         : `I know ${names.length} things — ${listWords(names)} — from ${named.length} ${plural(named.length, 'picture', 'pictures')}. ` +
-          'Show me a picture and I will find the faces in it.';
+          'Show me a picture and I will draw a box round what it finds.';
     el.answers.append(but('Choose a picture', 'primary', () => choosePicture()));
     showPractiseOffer(named.length === 0);
     return;
@@ -665,12 +682,12 @@ function render(): void {
 
   // Two ways to move on, each sitting under the thing it acts on rather than in a
   // button row beside them: skip the box, or skip the whole picture.
-  const leftInPhoto = state.turn ? state.turn.boxes.length - state.turnIndex - 1 : 0;
+  const leftInPicture = state.turn ? state.turn.boxes.length - state.turnIndex - 1 : 0;
   el.skipBox.hidden = !askingAboutFace;
   el.skipImage.hidden = false;
   el.skipImage.title =
-    leftInPhoto > 0
-      ? `Leave this picture — ${leftInPhoto} ${plural(leftInPhoto, 'face', 'faces')} will not be named`
+    leftInPicture > 0
+      ? `Leave this picture — ${leftInPicture} ${plural(leftInPicture, 'box', 'boxes')} will not be named`
       : 'Leave this picture';
 
   if (state.lastAnswer) el.answers.append(undoControl());
@@ -692,9 +709,14 @@ function renderQueue(): void {
     return;
   }
   const parts: string[] = [];
-  const faces = state.turn.boxes.length;
-  if (faces > 0) parts.push(`face ${state.turnIndex + 1} of ${faces}`);
-  if (hasRun()) parts.push(`photo ${runPosition()} of ${runTotal()}`);
+  const boxes = state.turn.boxes.length;
+  // "box" throughout, because a box is what the page draws and what the question asks
+  // about. It used to say "face" here and "box" everywhere else, which is two words for
+  // one thing — and with the practise set, which holds shapes and no faces at all, the old
+  // word was simply wrong.
+  if (boxes > 0) parts.push(`box ${state.turnIndex + 1} of ${boxes}`);
+  // "picture", not "photo": the page says picture everywhere else.
+  if (hasRun()) parts.push(`picture ${runPosition()} of ${runTotal()}`);
   if (state.opening) parts.push('opening the next one…');
   if (parts.length === 0) {
     el.queue.hidden = true;
@@ -765,7 +787,7 @@ function renderBoxes(): void {
     element.style.top = `${fit.top + box.y * fit.scale}px`;
     element.style.width = `${box.w * fit.scale}px`;
     element.style.height = `${box.h * fit.scale}px`;
-    element.title = `Face ${index + 1} of ${turn.boxes.length} — click to name this one`;
+    element.title = `Box ${index + 1} of ${turn.boxes.length} — click to name this one`;
 
     const number = document.createElement('span');
     number.className = 'box-num';
@@ -948,9 +970,24 @@ async function openNextPhoto(): Promise<Turn | null> {
     state.opening = true;
     try {
       const picture = await loadPicture(file);
-      // The search runs on the picture's own pixels, then the boxes are handed back
-      // in that same space, which is the space the overlay draws them in.
-      state.turns.push({ picture, boxes: detectFaces(picture.frame) });
+      // 🔴 THE FINDER RUNS ON EVERY PICTURE A VISITOR BRINGS, AND NOT ON THE DRAWINGS THE
+      // PAGE MADE ITSELF — and it is a measured decision, not a convenience.
+      //
+      // The finder is a face detector: a Haar cascade looking for the light-dark pattern of
+      // eyes, cheeks and nose. A drawn shape is a solid blob, and on the practise set it
+      // INVENTS boxes — measured 2026-09-23, through this very pipeline: 9 of the 20
+      // pictures got a box, ten boxes in all, each covering between 4% and 18% of the frame.
+      // A 4% crop of a circle is not a circle, so leaving those in place would hand the
+      // network a fragment of a shape and call it the shape's name — the practise would be
+      // teaching something other than what it says it teaches.
+      //
+      // So the drawing is handed over with nothing found, and the question is about the
+      // whole picture, which is the honest description of a page that drew one shape on it.
+      // ⚠️ This is NOT the forbidden thing: nothing here tunes the detector, and every
+      // photograph a visitor drops in still goes through it exactly as before. The page is
+      // only declining to run a face finder over its own drawing of a hexagon.
+      const drawn = practiseFiles.has(file.name);
+      state.turns.push({ picture, boxes: drawn ? [] : detectFaces(picture.frame) });
     } catch {
       note(`${file.name} could not be read as a picture.`);
     } finally {
@@ -989,16 +1026,24 @@ async function nextPhoto(): Promise<void> {
   state.skippedBoxes = [];
   await showFace();
 
-  const faces = nextTurn.boxes.length;
+  const boxes = nextTurn.boxes.length;
   const cleared = freshStart;
   freshStart = false;
-  const opening = cleared ? 'Memory cleared — it has forgotten everything from before. ' : '';
-  if (faces > 0) {
+  // The wipe is instant, and the line `practise()` writes lasts about a tenth of a second
+  // before the first picture says what it found — so the news travels on this line or the
+  // person never sees it. For the practise set it carries what the set is as well: twenty
+  // shapes, ten kinds, twice each, and the one instruction that makes the set teach
+  // anything — the same word for the same shape.
+  const opening = cleared
+    ? `Memory cleared. I drew ${PRACTISE_COUNT} shapes for you — ${SHAPE_NAMES.length} kinds, twice each. ` +
+      'Name each picture, using the same word for the same shape. '
+    : '';
+  if (boxes > 0) {
     note(
       opening +
-        (faces === 1
-          ? 'Found one face. Name it, or drag a box if it has the wrong one.'
-          : `Found ${faces} faces. They are named one at a time.`),
+        (boxes === 1
+          ? 'Found one box. Name it, or drag a box of your own if it has the wrong one.'
+          : `Found ${boxes} boxes. They are named one at a time.`),
     );
   } else if (cleared) {
     // Nothing else would be said here, so the wipe speaks on its own.
@@ -1020,9 +1065,11 @@ async function showFace(): Promise<void> {
     // is the subject and the crop is the picture.
     thumb: box ? picture.cropThumb(box) : picture.thumb,
     pixels: box ? picture.crop(box) : picture.whole(),
-    name: box ? `${picture.filename} — face ${state.turnIndex + 1}` : picture.filename,
+    name: box ? `${picture.filename} — box ${state.turnIndex + 1}` : picture.filename,
     addedAt: new Date().toISOString(),
-    origin: 'file',
+    // Where it came from: the visitor's disk, or the practise set the page drew. Recorded
+    // here rather than read back from the file name later.
+    origin: practiseFiles.has(picture.filename) ? 'sample' : 'file',
   };
 
   const now = look(state.current);
@@ -1152,6 +1199,11 @@ async function answer(name: string, extra = 0): Promise<void> {
     note(`One name per box — I used "${name}".`);
   }
 
+  // An event about the page, never about the picture: it carries where the picture came from
+  // and how many things are known, and never a name that was typed or a pixel that was seen.
+  // It only exists once a visitor has allowed analytics — `siteTrack` is defined by the gate.
+  window.siteTrack?.('picture_named', { source: sample.origin, names: knownNames().length });
+
   const before = snapshotRun();
   const nameWasNew = !state.names.includes(name);
 
@@ -1265,11 +1317,15 @@ function undoControl(): HTMLButtonElement {
 }
 
 async function practise(): Promise<void> {
-  // Practising hands the photographs over the way an upload does — George, 2026-09-19:
+  // Practising hands the practise set over the way an upload does — George, 2026-09-19:
   // "load them all in the drag pictures here, like 10, so i can train the model as if i
-  // uploaded them". So nothing is taught on the person's behalf: the pictures queue up,
-  // each is opened in turn and searched for faces, and every box is named by hand. What is
-  // practised is therefore the real loop, not a shortcut through it.
+  // uploaded them". So nothing is taught on the person's behalf: the pictures queue up, each
+  // is opened in turn and searched, and every box is named by hand. What is practised is
+  // therefore the real loop, not a shortcut through it.
+  //
+  // The set is twenty shapes the page draws itself — two of each of ten — because a set of
+  // things it drew is a set it can be measured against, and because the colour is random on
+  // every one of them, so the only thing there is to learn is the shape.
   //
   // And it starts from NOTHING — George, 2026-09-19: *"when i click practise, you should
   // delete memory"*. It used to add to whatever was already in the store, so a second
@@ -1278,13 +1334,16 @@ async function practise(): Promise<void> {
   // the chart's heading counted boxes from both. A practise set is a fresh start, pictures
   // and model both.
   //
-  // The photographs are fetched FIRST, so a failure to load them leaves what was already
-  // learned alone rather than clearing it for nothing.
+  // The pictures are drawn FIRST, so a failure leaves what was already learned alone rather
+  // than clearing it for nothing.
   const files = await makeSampleFiles(PRACTISE_COUNT);
   if (files.length === 0) {
-    note('The practise photographs would not load.');
+    note('The practise shapes could not be drawn.');
     return;
   }
+  practiseFiles.clear();
+  for (const file of files) practiseFiles.add(file.name);
+  window.siteTrack?.('practise_started', { pictures: files.length, names: SHAPE_NAMES.length });
   await forgetEverything();
   enqueue(files);
   // Read by the first picture's opening line — see `freshStart`. Set after `enqueue` on
@@ -1304,7 +1363,9 @@ async function practise(): Promise<void> {
 function showPractiseOffer(nothingNamed: boolean): void {
   el.aside.append(nothingNamed ? 'No pictures handy? ' : 'Want the practise set again? ');
   el.aside.append(link('practise', () => void practise()));
-  el.aside.append(` on ${PRACTISE_COUNT} photographs.`);
+  el.aside.append(
+    ` on ${PRACTISE_COUNT} shapes it draws itself — ${SHAPE_NAMES.length} kinds, twice each.`,
+  );
   el.aside.hidden = false;
 }
 
@@ -1395,6 +1456,14 @@ function handleMessage(message: HostMessage): void {
       adopt(message.weights);
       state.studying = false;
       renderStudying();
+      // The demo's own conversion, sent once when a model first exists. See `trainedOnce`.
+      if (!trainedOnce) {
+        trainedOnce = true;
+        window.siteTrack?.('model_trained', {
+          pictures: namedSamples().length,
+          names: knownNames().length,
+        });
+      }
       if (state.needsStudy) {
         state.needsStudy = false;
         study();
@@ -1475,6 +1544,7 @@ function saveToFile(): void {
   link.click();
   link.remove();
   URL.revokeObjectURL(url);
+  window.siteTrack?.('memory_saved', { names: state.file.classes.length });
   note('Saved. Load it back with "Load a saved memory".');
 }
 
@@ -1524,13 +1594,13 @@ function renderCharts(): void {
 }
 
 function renderCurves(): void {
-  const accent = getComputedStyle(document.body).getPropertyValue('--accent').trim() || '#a78bfa';
-  const yellow = getComputedStyle(document.body).getPropertyValue('--yellow').trim() || '#fbbf24';
+  const accent = getComputedStyle(document.body).getPropertyValue('--accent').trim() || '#f97316';
+  const second = getComputedStyle(document.body).getPropertyValue('--alt').trim() || '#60a5fa';
 
   drawLine(el.confusedChart, {
     series: [
       { values: state.history.map((m) => m.loss), color: accent, label: 'while studying' },
-      { values: state.history.map((m) => m.valLoss), color: yellow, label: 'on pictures held back' },
+      { values: state.history.map((m) => m.valLoss), color: second, label: 'on pictures held back' },
     ],
     emptyTitle: 'This line is drawn as it studies.',
     emptyHint: 'Show it a picture and list what you can see in it.',
@@ -1539,7 +1609,7 @@ function renderCurves(): void {
   drawLine(el.rightChart, {
     series: [
       { values: state.history.map((m) => m.trainAccuracy), color: accent, label: 'pictures it studied' },
-      { values: state.history.map((m) => m.valAccuracy), color: yellow, label: 'pictures held back' },
+      { values: state.history.map((m) => m.valAccuracy), color: second, label: 'pictures held back' },
     ],
     floor: 0,
     ceil: 1,
@@ -1729,7 +1799,7 @@ async function boot(): Promise<void> {
     const tooSmall = draft.w < turn.picture.width * 0.06 || draft.h < turn.picture.height * 0.06;
     if (tooSmall) {
       renderBoxes();
-      note('That box was too small — drag across the face you want to name.');
+      note('That box was too small — drag across the thing you want to name.');
       return;
     }
 

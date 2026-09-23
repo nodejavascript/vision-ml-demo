@@ -171,6 +171,32 @@ export interface Sample {
   pixels: Uint8Array;
   name: string;
   addedAt: string;
-  /** Where it came from: the visitor's disk, or the built-in sample set. */
+  /** Where it came from: the visitor's disk, or the built-in practise set. */
   origin: 'file' | 'sample';
+}
+
+/* ------------------------------------------------------------------ *
+ * What the cookie gate puts on `window`
+ * ------------------------------------------------------------------ */
+
+/**
+ * The gate's own surface, declared HERE rather than in `consent.ts`.
+ *
+ * `consent.ts` is deliberately not a module — it is loaded as a classic script, so it may
+ * carry no top-level `import` or `export`, and a `declare global` block is only legal inside
+ * a module. So the typings live in this file, which is one, and the gate and the page both
+ * read them from here.
+ */
+declare global {
+  interface Window {
+    /** Where the Google tag's commands are queued, once a visitor has allowed it. */
+    dataLayer?: unknown[];
+    /** Defined by the gate and only after a yes — undefined without consent, on purpose. */
+    gtag?: (...args: unknown[]) => void;
+    /**
+     * The page's way of sending an event. It does not exist until the gate has started, so a
+     * page with no consent has no way to send anything to Google at all.
+     */
+    siteTrack?: (name: string, params?: Record<string, unknown>) => void;
+  }
 }

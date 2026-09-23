@@ -3,40 +3,131 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- 🔴 THE TITLE IS THE FULL DOMAIN NAME AND NOTHING ELSE (standard part 1):
+         assert equality, never containment. The words belong in the h1 and the
+         description below. -->
     <title>vision-ml-demo.nodejavascript.com</title>
     <meta
       name="description"
-      content="Drop in one picture or a folderful. It learns the things you name in each one, and says what it can see."
+      content="Teach a small vision model in your browser: show it a picture, name what is in it, watch it learn. Twenty practise shapes are built in."
     />
-    <meta name="theme-color" content="#08050d" />
+    <link rel="canonical" href="https://vision-ml-demo.nodejavascript.com/" />
+    <meta name="theme-color" content="#f97316" />
     <meta name="color-scheme" content="dark" />
     <!--
-      The full icon set, part 15b of the family standard. The site had its own mark from the
-      first day, but shipped it as favicon.svg ONLY — so a bookmark, an older browser and an
-      iOS home screen each got nothing at all. The mark is unchanged; the SET is now complete.
+      The full icon set, part 15b of the family standard. The mark is this site's own —
+      four squares, one model looking at one picture — and the bar and footer carry the
+      family's five circles. The favicon is the site's; the bar is the family's.
     -->
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
     <link rel="icon" href="./favicon.ico" sizes="any" />
     <link rel="icon" sizes="32x32" href="./favicon-32.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png" />
     <link rel="manifest" href="./manifest.webmanifest" />
-    <!-- A prototype, doing everything on this machine. No analytics, no server. -->
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="vision-ml-demo.nodejavascript.com" />
+    <meta property="og:title" content="Teach a vision model what it sees" />
+    <meta
+      property="og:description"
+      content="Show it a picture, name what is in it, and watch a small network learn — in your browser, on your own machine. Twenty practise shapes are built in."
+    />
+    <meta property="og:url" content="https://vision-ml-demo.nodejavascript.com/" />
+    <meta property="og:image" content="https://vision-ml-demo.nodejavascript.com/og.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Teach a vision model what it sees" />
+    <meta
+      name="twitter:description"
+      content="Show it a picture, name what is in it, and watch a small network learn — in your browser, on your own machine. Twenty practise shapes are built in."
+    />
+    <meta name="twitter:image" content="https://vision-ml-demo.nodejavascript.com/og.png" />
+
     <link rel="stylesheet" href="./styles.css" />
+
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "WebApplication",
+            "name": "vision-ml-demo — teach a vision model what it sees",
+            "url": "https://vision-ml-demo.nodejavascript.com/",
+            "applicationCategory": "EducationalApplication",
+            "operatingSystem": "Any browser",
+            "browserRequirements": "JavaScript, Web Workers, IndexedDB",
+            "description": "A small convolutional network written from scratch in TypeScript. It learns the things you name in each picture, in your browser, and says what it can see.",
+            "offers": { "@type": "Offer", "price": "0", "priceCurrency": "CAD" },
+            "isAccessibleForFree": true
+          },
+          {
+            "@type": "FAQPage",
+            "mainEntity": [
+              {
+                "@type": "Question",
+                "name": "Are my pictures uploaded?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "No. Every picture is read on your own machine. There is no server behind this page, no request in the code that could carry a picture, and the whole demo works with the network disconnected."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Do I need my own pictures to try it?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "No. The page draws a practise set of twenty basic shapes — two of each of ten — and hands it over the way an upload arrives, so you can train a model and watch it improve before deciding what to teach it."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "What happens to the model when I close the tab?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "It stays in this browser. The pictures you name and the weights it learns are kept in this browser's own storage, so closing the tab and coming back picks up where you left off. You can also save the memory to a file and load it again later."
+                }
+              }
+            ]
+          }
+        ]
+      }
+    </script>
+
+    <!-- 🔴 THE GOOGLE TAG IS NOT IN THIS PAGE (standard part 2), and may not be added
+         here. The measurement id rides on the gate as an attribute and the gate appends
+         the tag only after a visitor says yes, so a refusal makes no request to Google and
+         sets no cookie. `test/static.test.js` fails if `googletagmanager` ever appears in
+         this file. -->
+    <script src="./consent.js" data-ga-id="G-Q9WZZTCWC6" defer></script>
     <script type="module" src="./app.js"></script>
   </head>
 
   <body>
+    <!-- 🔴 THE ABSTRACT IS A LAYER IN THE PAGE, NOT ONLY A RULE IN THE STYLESHEET
+         (standard part 5d-ii). A rule satisfied in a stylesheet nobody paints is no rule
+         at all — nine sites passed this check for weeks while painting a gradient wash and
+         no geometry, because the register counted gradients. This is the site's own
+         drawing: the checkerboard a convolution walks over, masked so it fades. -->
+    <div class="dvs-pattern" aria-hidden="true"></div>
+
     <a class="skip" href="#stage">Skip to the demo</a>
 
+    <!-- 🔴 THE HEADER CARRIES THE BRAND AND NOTHING ELSE (standard part 3): no nav, and
+         the brand goes to THIS site rather than to the parent. It used to link to
+         nodejavascript.com and to carry a "More detail" link beside it; the family link
+         lives on the footer's brand line, once, and the sections below are reached by
+         reading down the page. The mark here is the family's five circles, not this
+         site's own four squares — the favicon is the site's, the bar is the family's. -->
     <header class="top">
-      <a class="brand" href="https://nodejavascript.com/">
+      <a class="brand" href="/">
         <span class="mark" aria-hidden="true">
           <svg viewBox="0 0 32 32" width="24" height="24">
             <g fill="none" stroke="currentColor" stroke-width="1.7">
-              <rect x="3" y="6" width="11" height="11" rx="2" />
-              <rect x="18" y="6" width="11" height="11" rx="2" />
-              <rect x="3" y="20" width="11" height="9" rx="2" />
-              <rect x="18" y="20" width="11" height="9" rx="2" />
+              <circle cx="6" cy="10" r="3" />
+              <circle cx="6" cy="22" r="3" />
+              <circle cx="16" cy="16" r="3" />
+              <circle cx="26" cy="10" r="3" />
+              <circle cx="26" cy="22" r="3" />
+              <path d="M8.6 11.5 13.4 15M8.6 20.5 13.4 17M18.6 15 23.5 11.6M18.6 17 23.5 20.4" />
             </g>
           </svg>
         </span>
@@ -45,14 +136,14 @@
           <small>nodejavascript.com</small>
         </span>
       </a>
-      <nav><a href="#more">More detail</a></nav>
     </header>
 
     <main>
       <h1>Teach it what it sees</h1>
       <p class="intro">
         <b>Drag in as many pictures as you like.</b> It goes through them one at a time and draws a box around each
-        thing it finds. Every box is <b>one person, place or thing</b> — name it, and it remembers.
+        thing it finds. Every box is <b>one person, place or thing</b> — name it, and it remembers. No pictures to
+        hand? <b>Practise on twenty shapes it draws itself.</b>
       </p>
 
       <!-- The way out of an empty page. Deliberately OUTSIDE the stage card and above
@@ -99,7 +190,7 @@
                  box on a group photo is often too small to be sure of. -->
             <div class="who" id="who" hidden>
               <div class="who-face">
-                <img id="face" alt="The face being asked about" />
+                <img id="face" alt="The box being asked about" />
                 <!-- Under the face, because it acts on the box it is asking about. -->
                 <button class="link" id="skipBox" type="button" hidden>Skip this box</button>
               </div>
@@ -147,11 +238,11 @@
         <h2>More detail — the numbers, and how to keep it</h2>
 
         <p class="why">
-          <b>Why listing everything is worth the trouble.</b> One picture that names four things gives four pieces of
-          teaching instead of one, and a picture gets reused by everything in it — so the same twenty photographs go a
-          great deal further. It is also how real image collections are labelled. Underneath, that means the network
-          answers a separate yes/no for each thing it knows rather than picking a single winner, which is why it can
-          answer with more than one thing at a time.
+          <b>Why one name per box is worth the trouble.</b> Every box is a separate thing to name, so a picture of four
+          people teaches four things instead of one — each of them learned from the box it sits in rather than from the
+          whole frame. It is also how real image collections are labelled, one region at a time. Underneath, the network
+          answers a separate yes/no for each thing it knows rather than picking a single winner from all of them, which
+          is why more than one name can clear the line at once.
         </p>
 
         <div class="grid2">
@@ -164,7 +255,7 @@
             <canvas id="knowsChart" height="200"></canvas>
           </figure>
           <figure>
-            <figcaption>The shapes it looks for</figcaption>
+            <figcaption>The little patterns it looks for</figcaption>
             <canvas id="filtersChart" height="170"></canvas>
           </figure>
           <figure>
@@ -194,11 +285,127 @@
           <button class="btn ghost danger" id="forgetBtn" type="button">Forget everything</button>
         </div>
       </section>
+
+      <!-- 🔴 THE POLICY IS A SECTION OF THIS PAGE, NEVER A `privacy.html` OF ITS OWN
+           (standard part 4). Nothing is linked off the page, so there is no second document
+           to keep separately true and no `.html` in any URL. -->
+      <section class="card" id="privacy">
+        <h2>Privacy</h2>
+        <p>
+          Every picture you show it is read on your own machine. There is no server behind this page, nothing is
+          uploaded, and no request in the model code could carry a picture anywhere — the whole demo works with the
+          network switched off. <b>That is true whatever you answer about cookies.</b>
+        </p>
+        <p>
+          What it learns is kept in this browser's own storage, so closing the tab and coming back picks up where you
+          left off, and <b>Forget everything</b> erases it. Saving its memory downloads a file to your machine; loading
+          one back is a file you chose. Nothing about you is stored here and there are no accounts.
+        </p>
+        <h3 id="cookies">Cookies</h3>
+        <p>
+          That leaves one cookie, and it is optional: Google Analytics, which records anonymous page, click and scroll
+          events — never anything you type, and never a picture you show it. <b>Google's script is not in this page at
+          all.</b> It is added only if you allow it, so a visit that <i>rejects</i> makes no request to Google and
+          receives no cookie.
+        </p>
+        <p class="muted small">
+          Your answer is remembered in your own browser's storage, not in a cookie — setting a cookie to record a cookie
+          decision would be its own small joke. You can change it whenever you like from <b>Cookie settings</b> in the
+          footer, which opens the same panel that <b>Settings</b> does while the question is up. Questions about this
+          policy go to <a href="mailto:privacy@nodejavascript.com">privacy@nodejavascript.com</a>.
+        </p>
+      </section>
     </main>
 
-    <footer class="foot">
-      <span><b>vision-ml-demo</b> · a prototype on nodejavascript.com</span>
-      <span>Every picture stays on this computer. Nothing is uploaded.</span>
+    <!-- The cookie question, and the panel behind it.
+
+         Nothing appears here until consent.js has found a measurement id, and the bar asks
+         once: refusing is an answer, and it is not asked again. Both views share the one
+         fixed bar rather than a second dialog opening over it, because this is the element
+         whose height is measured and reserved at the bottom of the page — the footer must
+         stay clickable while the question is up. -->
+    <div class="consent" id="consentBar" role="dialog" aria-labelledby="consentTitle" hidden>
+      <div class="consentAsk" id="consentAsk">
+        <h2 class="consentTitle" id="consentTitle">Cookies are your call</h2>
+        <p class="consentText">
+          <b>Accept all to help decide what gets built next.</b> The numbers show which parts people actually use, and
+          that is what the work follows. Analytics is the only cookie here, it is not loaded until you say yes, and no
+          picture you show this page is ever sent anywhere — whatever you answer.
+          <a href="#privacy">See Privacy</a>
+        </p>
+      </div>
+
+      <!-- Every purpose is named, and the one switch starts OFF: a box that arrives
+           already ticked is a default, not a choice. There is no "strictly necessary" row
+           to go with it, because this site has no strictly necessary cookie — what it
+           learns lives in this browser and there is no server to hold a session. -->
+      <div class="consentPrefs" id="consentPrefs" hidden>
+        <div class="consentHead">
+          <h2 class="consentTitle">Cookie preferences</h2>
+          <button id="consentClose" class="consentClose" type="button" aria-label="Close cookie preferences">
+            &times;
+          </button>
+        </div>
+        <ul class="consentList">
+          <li class="consentRow">
+            <div>
+              <p class="consentRowName">Analytics</p>
+              <p class="consentRowWhy">
+                Google Analytics. It sets its own cookies and sends your page views, which controls you press and how
+                far down a page you read to Google in the United States — never anything you type and never a picture
+                you show it. Off unless you turn it on.
+              </p>
+            </div>
+            <button
+              id="consentAnalytics"
+              class="consentSwitch"
+              type="button"
+              role="switch"
+              aria-checked="false"
+              aria-label="Analytics cookies"
+            >
+              <span class="consentDot" aria-hidden="true"></span><span id="consentAnalyticsWord">Off</span>
+            </button>
+          </li>
+        </ul>
+      </div>
+
+      <!-- 🔴 THE COPY MAY MAKE THE CASE FOR ACCEPTING. THE CONTROLS MAY NOT. Reject all
+           keeps the same class, the same size, the same weight and the same distance from
+           the edge, and neither button is drawn with a focus ring when the bar opens.
+           Inviting a yes is honest; obstructing the refusal is not. -->
+      <div class="consentActions">
+        <button id="consentAccept" class="ghost" type="button">Accept all</button>
+        <button id="consentDecline" class="ghost" type="button">Reject all</button>
+      </div>
+      <button id="consentSettings" class="linkish consentSettings" type="button">Settings</button>
+    </div>
+
+    <footer class="site-footer">
+      <div class="footer-brand">
+        <span class="mark" aria-hidden="true">
+          <svg viewBox="0 0 32 32" width="22" height="22">
+            <g fill="none" stroke="currentColor" stroke-width="1.7">
+              <circle cx="6" cy="10" r="3" />
+              <circle cx="6" cy="22" r="3" />
+              <circle cx="16" cy="16" r="3" />
+              <circle cx="26" cy="10" r="3" />
+              <circle cx="26" cy="22" r="3" />
+              <path d="M8.6 11.5 13.4 15M8.6 20.5 13.4 17M18.6 15 23.5 11.6M18.6 17 23.5 20.4" />
+            </g>
+          </svg>
+        </span>
+        <span><b>vision-ml-demo</b> · <a href="https://nodejavascript.com/">nodejavascript.com</a></span>
+      </div>
+      <!-- The links line carries only what the brand line does not: this site's own policy
+           and the door to the cookie answer. The repository is private, so it is not linked.
+           There is no "Back to top" — it is a control about the page rather than the site,
+           and the reader's own Home key does the same job. -->
+      <p class="footer-links">
+        <a href="#privacy">Privacy</a> ·
+        <button id="consentBtn" class="linkish" type="button">Cookie settings</button>
+      </p>
+      <p class="footer-copy">© 2026 vision-ml-demo.nodejavascript.com. All rights reserved.</p>
     </footer>
   </body>
 </html>

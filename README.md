@@ -1,9 +1,12 @@
 # vision-ml-demo
 
-Teach a small computer program to recognise your pictures, one picture at a time.
+Teach a small vision model what it sees, one picture at a time — in the browser, on your own
+machine.
 
-A prototype for `vision-ml-demo.nodejavascript.com`. **Not deployed** — it is a local
-build with no analytics, no tracking, and no server behind it.
+**Live at https://vision-ml-demo.nodejavascript.com/** — built to the family standard
+(`~/.copilot/instructions/nodejavascript-site-standard.md`): the Google tag is not in the page,
+the cookie gate is the only thing that may load it, the policy is a section of the page rather
+than a page of its own, and the identity is this site's own.
 
 ## Run it
 
@@ -15,7 +18,25 @@ npm run dev        # tsc, then serve on http://127.0.0.1:4330/
 Running now as the `vision-ml-demo` systemd user service (same port, restart on
 failure): `systemctl --user status vision-ml-demo`.
 
+## Tests and deploy — three kinds, and the deploy is the script
+
+```bash
+npm test           # unit: the page says what the standard requires
+npm run test:e2e   # a real Chrome, the real worker, the real practise set, against a local server
+npm run test:live  # what a visitor actually receives, from the deployed host
+npm run deploy     # build → both suites → rsync → purge → smoke check → the live check
+```
+
+The unit suite holds the things only reading can settle — no Google tag in `index.html`, the title
+**is** the host, the footer door is **delegated**, the policy is an in-page anchor. The end-to-end
+suite holds behaviour, and it is the only place two claims can be checked at all: that a refusal
+makes **no request to Google**, and that the practise set really hands twenty pictures through the
+same loop an upload goes through. The live check is separate because `test:e2e` must stay runnable
+offline and a local build cannot prove what the deploy is serving.
+
 ## The two versions
+
+The page has one shape now, and the older branches are history rather than instruction:
 
 | Branch | What it is |
 |---|---|
@@ -28,18 +49,26 @@ Both share the same engine (`src/net.ts` and friends). Only the page differs.
 
 1. **Hand it pictures — as many as you like.** Drop a batch, or choose several. It
    puts them in a queue and goes through them **one at a time**, saying where you
-   are: *photo 3 of 12*.
-2. **It looks for faces in each one and draws a box around what it finds.** Two
-   people in a photograph are named **one at a time** — *face 1 of 2*, then *face 2
-   of 2* — and each face is saved as its own thing to recognise, not the whole
-   photograph.
-3. **For each box, give it one name — one person, place or thing.** A photograph
-   with no face found in it falls back to naming the picture itself.
-4. **Watch the chart under the picture fill in.** One segment per box: named,
-   skipped, the one being asked, and the ones still to come.
-5. **It studies, in the background, and remembers.**
+   are: *picture 3 of 12*.
+2. **No pictures handy? Practise on twenty shapes it draws itself.** Two of each of ten — a
+   circle, a square, a triangle, a star, a heart, a diamond, a cross, an arrow, a moon and a
+   hexagon — handed over the way an upload arrives: all twenty queued, each opened in turn, each
+   named by hand. The colour is random on every one of them, so the only thing there is to learn
+   is the shape, and naming the same shape twice is what shows whether it learned the shape or
+   memorised the picture.
+3. **It looks for faces in each picture it is given and draws a box around what it finds.** Two
+   people in a photograph are named **one at a time** — *box 1 of 2*, then *box 2 of 2* — and each
+   box is saved as its own thing to recognise, not the whole photograph.
+4. **For each box, give it one name — one person, place or thing.** A picture with nothing found
+   in it falls back to naming the picture itself.
+5. **Watch the chart under the picture fill in.** One segment per box: named, skipped, the one
+   being asked, and the ones still to come.
+6. **It studies, in the background, and remembers.** The pictures it has been taught and the
+   weights it learns are kept in this browser's **IndexedDB**, and it trains in a **Web Worker**
+   so the page never blocks. Nothing is uploaded — there is no server behind this page to upload
+   anything to — and the memory can also be saved to a file and loaded back.
 
-The run keeps its rhythm: naming a face goes straight on to the next one. A second batch
+The run keeps its rhythm: naming a box goes straight on to the next one. A second batch
 dropped mid-run queues up behind what is already waiting.
 
 **A box around something you do not want to name can be skipped**, and the box shows
@@ -108,6 +137,30 @@ answer, so it is set at the same size as the question it answers — not in the 
 voice, which is the larger type on the opening and closing lines — and it carries a little
 more air above it, so the box you type in and the guesses under it do not read as one block.
 
+## Where the practise set comes from
+
+It is **drawn, not fetched**: `src/samples.ts` paints each shape on a canvas at the width the
+face search reads, and hands it over as a PNG `File` — the same thing the drop zone receives.
+There is no folder of images, nothing to credit and nothing to download, and the set is
+deterministic, so picture seven is the same picture on every machine.
+
+Three decisions in that file are there for the learning rather than for the look:
+**a random colour on a random dark ground** (if a circle were always orange the network would
+learn "orange"), **a random rotation, size and position** (so a network that memorised the
+first picture rather than the shape fails on the second), and **a PNG at `ANALYSIS` wide** (so
+the search scales by one and a hard edge stays one pixel wide — a drawn shape handed over as a
+JPEG arrives fringed with colour that is not in the picture, which is a measured fault from the
+retired set).
+
+🔴 **The face finder is not run on these.** It is a face detector, and on twenty drawn shapes it
+**invents** boxes — measured 2026-09-23 through this page's own pipeline: 9 of the 20 pictures
+got a box, ten boxes in all, each covering between 4% and 18% of the frame. A 4% crop of a
+circle is not a circle, so those boxes would hand the network a fragment of a shape and call it
+the shape's name. The drawings are therefore handed over with nothing found, and the question is
+about the whole picture — which is the honest description of a page that drew one shape on it.
+**Nothing here tunes the detector**, and every photograph a visitor drops in still goes through
+it exactly as before.
+
 ## Where the faces come from
 
 There is **no face detector in this browser** — `window.FaceDetector` exists on
@@ -152,8 +205,8 @@ writing down what that actually did, because "skin is a narrow range of colour" 
 true often enough to look like it works.
 
 Measured against eighteen ordinary photographs — twelve of which hold a face,
-according to dlib's `face_recognition` — and, separately, against the twenty practise
-photographs the page ships:
+according to dlib's `face_recognition` — and, separately, against the twenty photographs
+the page used to ship as its practise set, before it was replaced by the drawn shapes:
 
 | | the colour rule, at 224 | the cascade, at 320 |
 |---|---|---|
@@ -253,7 +306,9 @@ Every speck is gone. What is left is the other kind — the whole shape, when it
 to land in the skin range — and that is a colour coincidence rather than blur, so it is left
 alone. Tuning the shapes' colours, or the threshold, to hide it would start rejecting small
 faces in real photographs, which is the thing the detector exists to find. The practise toast
-says a box on a drawn shape is the detector guessing, and the **×** is the answer.
+says a box on a drawn shape is the detector guessing, and the **×** is the answer. **⚠️ That was
+true of the old drawn set and is superseded**: the finder is no longer run on the practise
+drawings at all, for the measured reason given under *Where the practise set comes from*.
 
 ## The model
 
@@ -309,12 +364,25 @@ framework, no matrix library, no runtime dependencies.
 | `src/trainer-host.ts` | the study loop, one pass at a time, in 40 ms slices |
 | `src/trainer.worker.ts` | runs it off the main thread |
 | `src/charts.ts` | every chart, drawn by hand on a canvas |
-| `src/samples.ts` | the practise photographs, and where each came from |
+| `src/samples.ts` | the practise set — twenty shapes, drawn here |
+| `src/consent.ts` | the cookie gate, and the only thing that may load Google's script |
+| `test/static.test.js` · `test/e2e.test.js` · `tools/verify-live-consent.mjs` | the unit suite, the browser suite, and the live check |
+| `tools/deploy.sh` | build → tests → publish → purge → smoke check → live check |
 | `src/app.ts` | the page |
 | `site/` | the hand-written page, plus **generated** JavaScript |
 
 **`site/*.js` is compiled from `src/*.ts` — never edit it there.**
 
-## Not here
+## What is not here
 
-No tests, no analytics, no sitemap, no deployment. Deliberately.
+No accounts, no server, no upload, and no cookie except the optional Analytics one — which is not
+loaded until a visitor says yes. The repository is private: nothing links it from the page.
+
+## The deploy, and what happens next to it
+
+The host was created at deployment, with everything else that day: the DNS record, this site's own
+theme colour and background, the Analytics property in the `mcp` account named with the full
+domain, the Search Console properties, and the card under *Artificial Intelligence & Machine
+Learning* on nodejavascript.com. The Caddy block on `dvs-sites` carries `Cache-Control: no-store`
+on the shell, and the end-to-end suite fails if that header stops arriving — a deploy nobody can
+see is indistinguishable from no deploy.

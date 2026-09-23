@@ -1,12 +1,12 @@
 {
-  "name": "vision-ml-demo — watch a model read an image",
+  "name": "vision-ml-demo — teach a vision model what it sees",
   "short_name": "vision-ml-demo",
   "description": "Drop in one picture or a folderful. A small vision model learns the things you name in each one, on this machine, and says what it can see.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#08050d",
-  "theme_color": "#08050d",
+  "background_color": "#1a0c02",
+  "theme_color": "#f97316",
   "icons": [
     { "src": "/android-chrome-192x192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
     { "src": "/android-chrome-512x512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
