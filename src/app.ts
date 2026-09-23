@@ -1031,11 +1031,16 @@ async function nextPhoto(): Promise<void> {
   freshStart = false;
   // The wipe is instant, and the line `practise()` writes lasts about a tenth of a second
   // before the first picture says what it found — so the news travels on this line or the
-  // person never sees it. For the practise set it carries what the set is as well: twenty
-  // shapes, ten kinds, twice each, and the one instruction that makes the set teach
-  // anything — the same word for the same shape.
+  // person never sees it. For the practise set it carries what the set is as well: thirty
+  // shapes, four kinds, several of each — and the one instruction that makes the set teach
+  // anything, the same word for the same shape.
+  //
+  // ⚠️ "SEVERAL OF EACH" RATHER THAN A NUMBER, and that is deliberate: seven or eight of the
+  // four is a consequence of the count, and a phrase that says "seven or eight" has to be kept
+  // in step with two constants the moment either moves. The set is thirty of four; the number
+  // each gets is arithmetic, and arithmetic belongs in `samples.ts` rather than in a sentence.
   const opening = cleared
-    ? `Memory cleared. I drew ${PRACTISE_COUNT} shapes for you — ${SHAPE_NAMES.length} kinds, twice each. ` +
+    ? `Memory cleared. I drew ${PRACTISE_COUNT} shapes of ${SHAPE_NAMES.length} kinds, several of each. ` +
       'Name each picture, using the same word for the same shape. '
     : '';
   if (boxes > 0) {
@@ -1364,7 +1369,7 @@ function showPractiseOffer(nothingNamed: boolean): void {
   el.aside.append(nothingNamed ? 'No pictures handy? ' : 'Want the practise set again? ');
   el.aside.append(link('practise', () => void practise()));
   el.aside.append(
-    ` on ${PRACTISE_COUNT} shapes it draws itself — ${SHAPE_NAMES.length} kinds, twice each.`,
+    ` on ${PRACTISE_COUNT} shapes it draws itself — ${SHAPE_NAMES.length} kinds, several of each.`,
   );
   el.aside.hidden = false;
 }

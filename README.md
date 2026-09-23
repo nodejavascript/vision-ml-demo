@@ -35,7 +35,7 @@ npm run deploy     # build → both suites → rsync → purge → smoke check �
 The unit suite holds the things only reading can settle — no Google tag in `index.html`, the title
 **is** the host, the footer door is **delegated**, the policy is an in-page anchor. The end-to-end
 suite holds behaviour, and it is the only place two claims can be checked at all: that a refusal
-makes **no request to Google**, and that the practise set really hands twenty pictures through the
+makes **no request to Google**, and that the practise set really hands thirty pictures through the
 same loop an upload goes through. The live check is separate because `test:e2e` must stay runnable
 offline and a local build cannot prove what the deploy is serving.
 
@@ -55,12 +55,21 @@ Both share the same engine (`src/net.ts` and friends). Only the page differs.
 1. **Hand it pictures — as many as you like.** Drop a batch, or choose several. It
    puts them in a queue and goes through them **one at a time**, saying where you
    are: *picture 3 of 12*.
-2. **No pictures handy? Practise on twenty shapes it draws itself.** Two of each of ten — a
-   circle, a square, a triangle, a star, a heart, a diamond, a cross, an arrow, a moon and a
-   hexagon — handed over the way an upload arrives: all twenty queued, each opened in turn, each
-   named by hand. The colour is random on every one of them, so the only thing there is to learn
-   is the shape, and naming the same shape twice is what shows whether it learned the shape or
-   memorised the picture.
+2. **No pictures handy? Practise on thirty shapes it draws itself.** **Four kinds, seven or eight
+   of each** — a star, a moon, a heart and an arrow — handed over the way an upload arrives: all
+   thirty queued, each opened in turn, each named by hand. The colour is random on every one of
+   them, so the only thing there is to learn is the shape, and naming the same shape seven times is
+   what shows whether it learned the shape or memorised the pictures.
+
+   🔴 **THE COUNT AND THE CHOICE OF SHAPES ARE ONE DECISION, AND IT WAS GEORGE'S (23 September
+   2026):** *"the problem with the 20, there is not enough of similar shapes to learn from, make it
+   30 and only 4 different but difficult shapes"*. The first set was twenty pictures across ten
+   shapes — **two examples each** — and two is not a set to learn from: a network can hold one
+   picture and echo its answer, and the second example is the only test of whether anything was
+   learned, having already been seen. The four that remain are the hard ones, concave or curved or
+   directional, so the answer cannot be read off the drawing; the six that went — circle, square,
+   triangle, diamond, cross, hexagon — are convex and symmetric, and a circle and a hexagon differ
+   by a couple of corners.
 3. **It looks for faces in each picture it is given and draws a box around what it finds.** Two
    people in a photograph are named **one at a time** — *box 1 of 2*, then *box 2 of 2* — and each
    box is saved as its own thing to recognise, not the whole photograph.
@@ -157,14 +166,20 @@ the search scales by one and a hard edge stays one pixel wide — a drawn shape 
 JPEG arrives fringed with colour that is not in the picture, which is a measured fault from the
 retired set).
 
-🔴 **The face finder is not run on these.** It is a face detector, and on twenty drawn shapes it
-**invents** boxes — measured 2026-09-23 through this page's own pipeline: 9 of the 20 pictures
-got a box, ten boxes in all, each covering between 4% and 18% of the frame. A 4% crop of a
-circle is not a circle, so those boxes would hand the network a fragment of a shape and call it
-the shape's name. The drawings are therefore handed over with nothing found, and the question is
-about the whole picture — which is the honest description of a page that drew one shape on it.
-**Nothing here tunes the detector**, and every photograph a visitor drops in still goes through
-it exactly as before.
+🔴 **The face finder is not run on these.** It is a face detector, and on drawn shapes it
+**invents** boxes — measured 2026-09-23 through this page's own modules (`makeSampleFiles` →
+`loadPicture` → `detectFaces`): on the **thirty** pictures of the current set, **17 got a box, 23
+boxes in all, each covering between 4% and 14% of the frame**. A 4% crop of a crescent is not a
+crescent, so those boxes would hand the network a fragment of a shape and call it the shape's name.
+The drawings are therefore handed over with nothing found, and the question is about the whole
+picture — which is the honest description of a page that drew one shape on it. **Nothing here tunes
+the detector**, and every photograph a visitor drops in still goes through it exactly as before.
+
+**The retired twenty-shape set fired on 9 of its 20 pictures, and the new one fires on 17 of 30** —
+so the change made the finder *noisier* on the drawings, not quieter, which is worth knowing before
+anybody reads the four hard shapes as an easier set for a face detector. It is the opposite: a star
+and a crescent hold the kind of dark-light-dark band a cascade is looking for, and a circle does
+not.
 
 ## Where the faces come from
 
@@ -249,7 +264,8 @@ Underneath, that is a multi-label network: a separate yes/no for each thing it k
 
 Measured on the **90-picture drawn set this page carried before 23 September 2026**, over 11
 names: loss **0.85 → 0.13**, **85%** on pictures held back from training, **72–100%** per name.
-The figures belong to that set — the twenty shapes the page ships now are a different set and are
+The figures belong to that set — the thirty pictures of four shapes the page ships now are a
+different set and are
 not what was measured here.
 
 ## How a name is read
@@ -282,8 +298,8 @@ that *sitting* is not a thing, so "a cat sitting on a wall" comes out as
 the noun ends — and the page echoes back every name it stored, so a bad one is visible
 immediately rather than buried in the vocabulary.
 
-No pictures handy? **The practise link queues the page's own drawn shapes** — **twenty of
-them, two of each of ten kinds** (`src/samples.ts`). They are handed over as **files**, not
+No pictures handy? **The practise link queues the page's own drawn shapes** — **thirty of
+them, four kinds, seven or eight of each** (`src/samples.ts`). They are handed over as **files**, not
 pushed into the model: they queue, each is opened in turn, and each is named by hand. **The face
 finder is deliberately not run on them**, for the measured reason written down under *Where the
 practise set comes from*. Nothing is taught on your behalf — what you practise is the loop a real
@@ -377,7 +393,7 @@ framework, no matrix library, no runtime dependencies.
 | `src/trainer-host.ts` | the study loop, one pass at a time, in 40 ms slices |
 | `src/trainer.worker.ts` | runs it off the main thread |
 | `src/charts.ts` | every chart, drawn by hand on a canvas |
-| `src/samples.ts` | the practise set — twenty shapes, drawn here |
+| `src/samples.ts` | the practise set — thirty pictures of four hard shapes, drawn here |
 | `src/consent.ts` | the cookie gate, and the only thing that may load Google's script |
 | `test/static.test.js` · `test/e2e.test.js` · `tools/verify-live-consent.mjs` | the unit suite, the browser suite, and the live check |
 | `tools/deploy.sh` | build → tests → publish → purge → smoke check → live check |

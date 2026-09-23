@@ -332,14 +332,25 @@ test('robots.txt points at the sitemap, and the sitemap is on disk', () => {
  * The practise set, and the words the page uses
  * ------------------------------------------------------------------ */
 
-test('the practise set is twenty pictures, two of each of ten shapes', () => {
+test('the practise set is thirty pictures of four hard shapes, several of each', () => {
   // Read out of the emitted module rather than the TypeScript, so a set that fails to
   // compile or an export that is dropped is caught here rather than in the browser.
   const shapes = samples.match(/SHAPE_NAMES = \[([\s\S]*?)\];/)[1].match(/'[a-z]+'/g).map((s) => s.slice(1, -1));
-  assert.equal(shapes.length, 10, `the set draws ten kinds of shape, found ${shapes.length}`);
+  // 🔴 FOUR SHAPES AND THIRTY PICTURES ARE ONE DECISION, NOT TWO (George, 23 September 2026:
+  // *"there is not enough of similar shapes to learn from, make it 30 and only 4 different but
+  // difficult shapes"*). Twenty across ten gave two examples each, which is not a set to learn
+  // from; thirty across four gives seven or eight, which is. Both numbers are asserted together
+  // here on purpose: a later change that moved one without the other would quietly undo the fix.
+  assert.equal(shapes.length, 4, `the set draws four kinds of shape, found ${shapes.length}`);
+  assert.deepEqual(shapes, ['star', 'moon', 'heart', 'arrow'],
+    'the four are the hard ones — concave, curved or directional, so the answer is not readable off the drawing');
   assert.deepEqual([...new Set(shapes)], shapes, 'no shape may appear twice in the list');
-  assert.equal(samples.match(/PRACTISE_COUNT = (\d+)/)[1], '20');
-  assert.match(samples, /pool\.push\(shape, shape\)/, 'two of each shape, so the second one tests the first');
+  assert.equal(samples.match(/PRACTISE_COUNT = (\d+)/)[1], '30');
+  // ⚠️ `\s+` RATHER THAN A SPACE: `tsc` re-prints a long statement onto two lines, so an
+  // assertion that pinned the formatting of the TypeScript failed on the JavaScript that ships.
+  // The check is about the pool being built by cycling, and the line break is not the rule.
+  assert.match(samples, /while \(pool\.length < count\)\s+pool\.push\(SHAPE_NAMES\[pool\.length % SHAPE_NAMES\.length\]\)/,
+    'the pool is built by cycling the shapes, so thirty across four comes out even');
   assert.match(samples, /'image\/png'/, 'a drawn shape handed over as a JPEG arrives fringed with colour');
   assert.match(samples, /ANALYSIS/, 'drawn at the width the search reads, so it is never resampled');
   assert.match(samples, /practise-\$\{/, 'the file names are the set’s own');
@@ -348,6 +359,11 @@ test('the practise set is twenty pictures, two of each of ten shapes', () => {
     !/practise-\$\{[^}]*\}[^`]*shape/.test(samples),
     'a file name holding the shape would put the answer on screen'
   );
+  // The six shapes that went are not merely unused — they are GONE from the drawing code, so a
+  // name left in the list with no outline behind it cannot come back unnoticed.
+  for (const gone of ['circle', 'square', 'triangle', 'diamond', 'cross', 'hexagon']) {
+    assert.ok(!new RegExp(`case '${gone}'`).test(samples), `the retired shape is still drawn: ${gone}`);
+  }
 });
 
 test('the page says ONE word for a box and ONE word for a picture', () => {
@@ -382,9 +398,9 @@ test('the page sends only the events the house standard asks for, and never what
 });
 
 test('the finder runs on what a visitor brings, and not on the page’s own drawings', () => {
-  // Measured 2026-09-23 through the page's own pipeline: on the twenty practise drawings the
-  // cascade invents a box on 9 of them, each covering 4–18% of the frame — and a 4% crop of a
-  // circle is not a circle. So the drawing is handed over with nothing found, and every
+  // Measured 2026-09-23 through the page's own pipeline: on the drawn practise shapes the cascade
+  // invents a box on some of them, each covering a small share of the frame — and a 4% crop of a
+  // crescent is not a crescent. So the drawing is handed over with nothing found, and every
   // photograph a visitor drops in still goes through the finder unchanged. This asserts the
   // distinction rather than the outcome, because it is the distinction that has to survive.
   assert.match(app, /practiseFiles\.has\(file\.name\)/, 'the page must know which files it drew');

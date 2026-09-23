@@ -1,25 +1,39 @@
 /**
- * samples.ts — the practise set: twenty pictures, drawn here rather than fetched.
+ * samples.ts — the practise set: thirty pictures of four hard shapes, drawn here rather than fetched.
  *
  * The demo asks you to bring your own pictures, and it should. But an empty page with a
  * file dialog is a poor first minute: nothing at all happens until you have gathered
  * twenty photographs. So the page also draws a set of its own and hands it over the way
  * an upload arrives — queued, opened one at a time, each one named by hand.
  *
- * George, 2026-09-23: *"the samples for a practise is 20 of basic shapes to train"*.
- * Twenty pictures: **two of each of ten shapes** — a circle, a square, a triangle, a star,
- * a heart, a diamond, a cross, an arrow, a moon and a hexagon — so that naming the same
- * shape twice is what teaches it the difference between a circle and a hexagon.
+ * George, 2026-09-23: *"the samples for a practise is 20 of basic shapes to train"* — and then,
+ * having looked at it: ***"the problem with the 20, there is not enough of similar shapes to learn
+ * from, make it 30 and only 4 different but difficult shapes"***.
+ *
+ * **THE COUNT AND THE CHOICE OF SHAPES ARE THE SAME DECISION, and that is the whole point.**
+ * Twenty pictures across ten shapes is **two examples each**, and two is not a set to learn from:
+ * a network can hold one picture and echo its answer, and the second example is the only test of
+ * whether anything was learned — and it has already been seen. Thirty across four shapes is
+ * **seven or eight of each**, so the same shape comes back again and again in different colours,
+ * rotations and sizes, and what has to be learned is the shape.
+ *
+ * **The four are the hard ones** — star, moon, heart and arrow — because a set only teaches
+ * something if the answer is not obvious from a glance at the extent of the drawing. The six that
+ * went with them (circle, square, triangle, diamond, cross, hexagon) are convex and symmetric: a
+ * circle and a hexagon are told apart by a couple of corners, and a square is a diamond rotated
+ * 45 degrees. The four left have concave or curved detail that survives rotation and does not
+ * survive being memorised — a crescent and a star are the two hardest things here to tell apart,
+ * and telling them apart on the seventh example is the test this set exists to set.
  *
  * Three things about the drawing are deliberate, and each is there for the learning:
  *
- *   - **The colour is random, every picture.** If a circle were always orange the network
- *     would learn "orange" and call it a circle. With a random hue on a random dark ground,
- *     colour carries no information at all and the only thing left to learn is the shape —
- *     which is what a practise set is for.
- *   - **Nothing is in the same place twice.** Each shape is rotated, scaled and nudged by
- *     its own seed, so a network that memorises one picture's pixels rather than the shape
- *     gets the second one wrong, and the chart of held-back pictures says so.
+ *   - **The colour is random, every picture.** If a star were always orange the network would
+ *     learn "orange" and call it a star. With a random hue on a random dark ground, colour
+ *     carries no information at all and the only thing left to learn is the shape — which is
+ *     what a practise set is for.
+ *   - **Nothing is in the same place twice.** Each shape is rotated, scaled and nudged by its own
+ *     seed, so a network that memorises one picture's pixels rather than the shape gets the next
+ *     one wrong, and the chart of held-back pictures says so.
  *   - **It is a PNG, at the width the face search reads.** The picture is drawn at `ANALYSIS`
  *     wide, so the search scales it by one and never resamples, and a hard edge stays one
  *     pixel wide. A drawn shape handed over as a JPEG arrives fringed with colour that is not
@@ -33,26 +47,20 @@
 
 import { ANALYSIS } from './image.js';
 
-/** How many pictures the practise link hands over. */
-export const PRACTISE_COUNT = 20;
+/** How many pictures the practise link hands over — seven or eight of each of the four shapes. */
+export const PRACTISE_COUNT = 30;
 
 /**
- * The ten shapes, in the order they are drawn.
+ * The four shapes, in the order the pool is built.
  *
  * Exported so the page can say what the set holds without repeating the list, and so the
  * suite can check that what the copy promises is what is drawn.
  */
 export const SHAPE_NAMES: readonly string[] = [
-  'circle',
-  'square',
-  'triangle',
   'star',
-  'heart',
-  'diamond',
-  'cross',
-  'arrow',
   'moon',
-  'hexagon',
+  'heart',
+  'arrow',
 ];
 
 /**
@@ -89,32 +97,6 @@ function between(random: () => number, low: number, high: number): number {
  */
 function path(ctx: CanvasRenderingContext2D, shape: string): void {
   switch (shape) {
-    case 'circle':
-      ctx.arc(0, 0, 1, 0, Math.PI * 2);
-      break;
-
-    case 'square':
-      ctx.rect(-0.88, -0.88, 1.76, 1.76);
-      break;
-
-    case 'triangle':
-      ctx.moveTo(0, -1);
-      ctx.lineTo(0.95, 0.75);
-      ctx.lineTo(-0.95, 0.75);
-      ctx.closePath();
-      break;
-
-    case 'diamond':
-      // Half as wide as it is tall, so a rotated diamond is still obviously not a rotated
-      // square. At equal sides the two shapes are the same rhombus and the set would be
-      // asking the network to tell them apart by a couple of degrees of tilt.
-      ctx.moveTo(0, -1);
-      ctx.lineTo(0.62, 0);
-      ctx.lineTo(0, 1);
-      ctx.lineTo(-0.62, 0);
-      ctx.closePath();
-      break;
-
     case 'star': {
       const points = 5;
       const inner = 0.44;
@@ -139,24 +121,6 @@ function path(ctx: CanvasRenderingContext2D, shape: string): void {
       ctx.bezierCurveTo(0.62, -1.15, 1.45, -0.2, 0, 0.95);
       ctx.closePath();
       break;
-
-    case 'cross': {
-      const arm = 0.34;
-      ctx.moveTo(-arm, -1);
-      ctx.lineTo(arm, -1);
-      ctx.lineTo(arm, -arm);
-      ctx.lineTo(1, -arm);
-      ctx.lineTo(1, arm);
-      ctx.lineTo(arm, arm);
-      ctx.lineTo(arm, 1);
-      ctx.lineTo(-arm, 1);
-      ctx.lineTo(-arm, arm);
-      ctx.lineTo(-1, arm);
-      ctx.lineTo(-1, -arm);
-      ctx.lineTo(-arm, -arm);
-      ctx.closePath();
-      break;
-    }
 
     case 'arrow':
       // Up and to the right, with a tail long enough to be an arrow and not a wedge.
@@ -192,20 +156,10 @@ function path(ctx: CanvasRenderingContext2D, shape: string): void {
       ctx.closePath();
       break;
 
-    case 'hexagon':
-      for (let i = 0; i < 6; i++) {
-        const angle = (i * Math.PI) / 3 - Math.PI / 2;
-        const x = Math.cos(angle);
-        const y = Math.sin(angle);
-        if (i === 0) ctx.moveTo(x, y);
-        else ctx.lineTo(x, y);
-      }
-      ctx.closePath();
-      break;
-
     default:
-      // Unreachable while the list above is the list — and a circle rather than a blank
-      // canvas if a name is ever added without its drawing.
+      // Unreachable while the list above is the list — and a CIRCLE, which is deliberately not
+      // one of the four shapes this set draws: a name added without its drawing then fails
+      // visibly, as a shape nobody asked for, instead of silently painting a blank canvas.
       ctx.arc(0, 0, 1, 0, Math.PI * 2);
       break;
   }
@@ -252,10 +206,18 @@ function drawShape(canvas: HTMLCanvasElement, shape: string, seed: number): void
  * parameter so that a test can shuffle the same way twice.
  */
 export async function makeSampleFiles(count = PRACTISE_COUNT, random: () => number = Math.random): Promise<File[]> {
-  // Two of each shape, so the second one is the only honest test of whether the shape was
-  // learned or the first picture memorised.
+  // 🔴 SEVEN OR EIGHT OF EACH — the change George asked for on 23 September 2026: *"there is not
+  // enough of similar shapes to learn from, make it 30 and only 4 different but difficult
+  // shapes"*. The pool is built by CYCLING the four, so thirty across four comes out EVEN —
+  // 8, 8, 7, 7 — rather than as a run of one shape and a couple of another.
   const pool: string[] = [];
-  for (const shape of SHAPE_NAMES) pool.push(shape, shape);
+  while (pool.length < count) pool.push(SHAPE_NAMES[pool.length % SHAPE_NAMES.length]);
+
+  // Then shuffled, and the shuffle is not decoration: **a queue that always reached the star
+  // fourth would hand the person the answer.** "The fifth one is the moon" is a rule about the
+  // set, not about the picture, and a set you can read the answer off teaches nothing. The ORDER
+  // is different on every visit; the drawing at a position is not, because its seed is the
+  // position and the shape only decides which outline goes on it.
   for (let i = pool.length - 1; i > 0; i--) {
     const j = Math.floor(random() * (i + 1));
     const swap = pool[i];

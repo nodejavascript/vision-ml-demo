@@ -11,7 +11,7 @@ import { chromium } from 'playwright';
  *
  * The unit suite proves the page says what the standard requires; this suite proves the
  * page DOES it, and it is the only place two of the claims can be checked at all: that a
- * refusal makes no request to Google, and that the practise set really hands over twenty
+ * refusal makes no request to Google, and that the practise set really hands over thirty
  * pictures through the same loop an upload goes through.
  */
 
@@ -211,27 +211,29 @@ test('the footer door reopens the panel and leaves the answer alone', async () =
  * The practise set, through the real loop
  * ------------------------------------------------------------------ */
 
-test('the practise set hands over twenty shapes, and they go through the real loop', async () => {
+test('the practise set hands over thirty shapes, and they go through the real loop', async () => {
   const { context, page, pageErrors, consoleErrors } = await openPage({ consent: 'denied' });
   const offer = page.locator('#aside .link');
   assert.ok(await offer.isVisible(), 'the way to the practise set is offered before anything is named');
   await offer.click();
 
-  // Twenty pictures, queued the way an upload is queued.
-  await page.waitForFunction(() => document.getElementById('queue')?.textContent?.includes('of 20'), null, {
+  // Thirty pictures, queued the way an upload is queued — four shapes, seven or eight of each,
+  // which is the whole point of the change: enough of a similar shape to learn from.
+  await page.waitForFunction(() => document.getElementById('queue')?.textContent?.includes('of 30'), null, {
     timeout: 20000,
   });
-  assert.match(await page.textContent('#queue'), /^picture 1 of 20$/);
+  assert.match(await page.textContent('#queue'), /^picture 1 of 30$/);
 
   // A shape is not a face, so the finder finds nothing and the question is about the whole
   // picture — which is the same path a photograph of a kitchen takes.
   assert.equal(await page.textContent('#tellLabel'), 'What is in this picture? One name:');
   assert.equal(await page.locator('#boxes .box').count(), 0, 'a shape holds no faces, and none is invented');
 
-  // Naming it moves the run on, and the page says what it now knows.
-  await page.fill('#list', 'circle');
+  // Naming it moves the run on, and the page says what it now knows. The name typed is the
+  // person's own word — nothing checks it against the set, and `star` is only a label here.
+  await page.fill('#list', 'star');
   await page.click('#tellBtn');
-  await page.waitForFunction(() => document.getElementById('queue')?.textContent?.includes('picture 2 of 20'), null, {
+  await page.waitForFunction(() => document.getElementById('queue')?.textContent?.includes('picture 2 of 30'), null, {
     timeout: 20000,
   });
   assert.match(await page.textContent('#progress'), /I know 1 thing/);
