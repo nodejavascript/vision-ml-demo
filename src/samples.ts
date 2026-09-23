@@ -11,7 +11,8 @@
  * from, make it 30 and only 4 different but difficult shapes"***.
  *
  * **THE COUNT AND THE CHOICE OF SHAPES ARE THE SAME DECISION, and that is the whole point.**
- * Twenty pictures across ten shapes is **two examples each**, and two is not a set to learn from:
+ * The twenty pictures across ten shapes this replaced were **two examples each**, and two is not
+ * a set to learn from:
  * a network can hold one picture and echo its answer, and the second example is the only test of
  * whether anything was learned — and it has already been seen. Thirty across four shapes is
  * **seven or eight of each**, so the same shape comes back again and again in different colours,

@@ -1328,9 +1328,11 @@ async function practise(): Promise<void> {
   // is opened in turn and searched, and every box is named by hand. What is practised is
   // therefore the real loop, not a shortcut through it.
   //
-  // The set is twenty shapes the page draws itself — two of each of ten — because a set of
-  // things it drew is a set it can be measured against, and because the colour is random on
-  // every one of them, so the only thing there is to learn is the shape.
+  // The set is thirty shapes the page draws itself, in four hard kinds, so several of each —
+  // because a set of things it drew is a set it can be measured against, and because the colour
+  // is random on every one of them, so the only thing there is to learn is the shape. It was
+  // twenty across ten kinds until 23 September 2026, which gave two examples of each and was
+  // not a set to learn from (the count and the choice of shapes are the same decision).
   //
   // And it starts from NOTHING — George, 2026-09-19: *"when i click practise, you should
   // delete memory"*. It used to add to whatever was already in the store, so a second

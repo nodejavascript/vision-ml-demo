@@ -318,8 +318,9 @@ function oneBoxPerFace(hits: Box[]): Box[] {
  *
  *   - **Stopping the pyramid at a window covering 60% of the picture** — sensible on
  *     its face, since a head that fills the frame is a crop, and it saves the most
- *     expensive sizes. It also lost the face in one of the twenty practise
- *     photographs outright. The pyramid runs to the picture's own size.
+ *     expensive sizes. It also lost the face in one of the practise
+ *     photographs outright — twenty of them then, before the set became thirty.
+ *     The pyramid runs to the picture's own size.
  *   - **Stepping two pixels everywhere instead of one above double the window** —
  *     a quarter of the stops, and about two and a half times faster, and it lost
  *     three faces. `scaleFor` keeps OpenCV's rule.

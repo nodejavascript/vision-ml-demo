@@ -28,6 +28,27 @@ const charts = read('charts.js');
 const samples = read('samples.js');
 const manifest = JSON.parse(read('manifest.webmanifest'));
 
+/**
+ * The practise set's two numbers, read out of the emitted module — the one place they are
+ * declared — so every check that talks about the set agrees with the set rather than with a
+ * sentence somebody wrote about it.
+ */
+const practiseCount = Number(samples.match(/PRACTISE_COUNT = (\d+)/)[1]);
+const practiseKinds = samples.match(/SHAPE_NAMES = \[([\s\S]*?)\];/)[1].match(/'[a-z]+'/g).length;
+
+const NUMBER_WORDS = {
+  one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
+  eleven: 11, twelve: 12, fifteen: 15, eighteen: 18, twenty: 20, twentyfive: 25, thirty: 30,
+  thirtyfive: 35, forty: 40, fifty: 50, sixty: 60, seventy: 70, eighty: 80, ninety: 90,
+};
+
+/** A written number as a number — `null` for a word that is not a number at all. */
+const numberIn = (word) => {
+  const w = String(word).toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (/^\d+$/.test(w)) return Number(w);
+  return NUMBER_WORDS[w] ?? null;
+};
+
 /** Strip comments before reading code, so a doc comment can never be read as a fault. */
 const withoutComments = (text) =>
   text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
@@ -368,6 +389,97 @@ test('the practise set is thirty pictures of four hard shapes, several of each',
   for (const gone of ['circle', 'square', 'triangle', 'diamond', 'cross', 'hexagon']) {
     assert.ok(!new RegExp(`case '${gone}'`).test(samples), `the retired shape is still drawn: ${gone}`);
   }
+});
+
+test('every count the page states about its own practise set agrees with the set', () => {
+  // 🔴 THE DEFECT THIS EXISTS FOR, measured 23 September 2026. The set went from twenty pictures
+  // of ten shapes to thirty of four; the module was changed, the visible prose was changed, and
+  // the three `<head>` descriptions were NOT — so the page went on telling Google and every
+  // sharing card "Twenty practise shapes are built in" while drawing thirty. The prose that
+  // travels FURTHEST, into a search result nobody stands next to, was the one nothing read. The
+  // practise-set test above pins the module; this one pins the words.
+  //
+  // The pairing is deliberately narrow so it cannot cry wolf: a NUMBER WORD (or digits)
+  // immediately before "shapes" in a passage that is talking about the practise set. In "thirty
+  // shapes of four kinds" the four is paired with "kinds", so the shape count is checked by its
+  // own assertion below rather than guessed at here.
+  // Every passage that LEAVES the page: the description Google shows, and the two sharing cards.
+  const headCopy = [...html.matchAll(
+    /<meta[^>]*(?:name|property)="(description|og:description|twitter:description)"[^>]*content="([^"]*)"/g,
+  )].map((m) => ({ where: `the ${m[1]}`, text: m[2] }));
+  assert.equal(headCopy.length, 3, 'the page carries three descriptions: search, Open Graph, Twitter');
+
+  // And the passages a visitor reads.
+  const prose = [...html.matchAll(/>([^<>{}]*(?:practise|Practise)[^<>{}]*)</g)]
+    .map((m) => ({ where: 'the visible prose', text: m[1] }));
+
+  const passages = [...headCopy, ...prose];
+  assert.ok(prose.length > 0, 'the page must say somewhere what the practise set is');
+
+  for (const { where, text } of passages) {
+    for (const m of text.matchAll(/\b([A-Za-z]+|\d+)\s+(?:practise\s+)?shapes\b/gi)) {
+      const said = numberIn(m[1]);
+      if (said === null) continue; // "practise shapes", "drawn shapes" — not a count
+      assert.equal(said, practiseCount,
+        `${where} says "${m[0]}" and the set is ${practiseCount} — the number that travels furthest is the one to change`);
+    }
+  }
+
+  // The count of KINDS is the other half of the same decision, and it is stated in words too.
+  assert.ok(passages.some((p) => /\bshapes\b/.test(p.text)),
+    'at least one passage must state the set outright, or this test passes by saying nothing');
+  for (const m of html.matchAll(/\b([A-Za-z]+|\d+)\s+kinds\b/gi)) {
+    const said = numberIn(m[1]);
+    if (said === null) continue;
+    assert.equal(said, practiseKinds, `the page says "${m[0]}" and the set draws ${practiseKinds}`);
+  }
+});
+
+test('a count of the practise set that is HISTORY is marked as history', () => {
+  // The same rule one layer down: a comment saying the set is twenty regenerates the stale copy
+  // above the next time somebody reads it as current. A former value is worth keeping — the
+  // reason the set changed is the whole argument for four shapes — so the rule is not "never
+  // write twenty". It is "do not write it as though it were true now".
+  //
+  // 🔴 THE PAIRING IS NARROW ON PURPOSE, AND THE NARROWNESS IS THE POINT. The first draft of this
+  // check paired any number with `shapes|pictures|photographs` and failed on `src/app.ts:158` —
+  // "fifty photographs opened up front would sit in memory as fifty full-size canvases", which is
+  // a cap on the visitor's OWN uploads — and would then have failed on `src/haar.ts:252`, "more
+  // than eight pictures to choose a practise set from", which is the thirty-eight-photograph
+  // survey. `photographs` in `haar.ts` means that survey throughout, and `samples.ts` says "until
+  // you have gathered twenty photographs" about the visitor's own disk. **A check that flagged
+  // those is a check that would be switched off, which is worse than no check at all** — so this
+  // one reads only a count that is QUALIFIED as the set: "N practise shapes|pictures|photographs",
+  // "N shapes the page draws", or a number right after "the practise set".
+  const FORMER = /\b(?:was|were|used to|formerly|retired|replaced|before|no longer|of the day|at the time)\b/i;
+  const QUALIFIED = new RegExp(
+    '\\b([A-Za-z]+|\\d+)\\s+practise\\s+(?:shapes|pictures|photographs)\\b'
+    + '|\\b([A-Za-z]+|\\d+)\\s+shapes\\s+the\\s+page\\s+draws\\b'
+    + '|\\bpractise set\\b[^.]{0,24}?\\b([A-Za-z]+|\\d+)\\s+(?:pictures|shapes|photographs)\\b',
+    'gi',
+  );
+  const files = [
+    ['src/app.ts', readFileSync(join(ROOT, 'src', 'app.ts'), 'utf8')],
+    ['src/samples.ts', readFileSync(join(ROOT, 'src', 'samples.ts'), 'utf8')],
+    ['src/haar.ts', readFileSync(join(ROOT, 'src', 'haar.ts'), 'utf8')],
+  ];
+
+  let seen = 0;
+  for (const [name, text] of files) {
+    for (const [i, line] of text.split('\n').entries()) {
+      for (const m of line.matchAll(QUALIFIED)) {
+        const said = numberIn(m[1] ?? m[2] ?? m[3]);
+        if (said === null) continue;
+        seen++;
+        if (said === practiseCount) continue;
+        assert.ok(FORMER.test(line),
+          `${name}:${i + 1} reads "${m[0]}" as though it were true now, and the set is ${practiseCount} — say it was, or it will be copied forward`);
+      }
+    }
+  }
+
+  // And it may not pass by finding nothing to read.
+  assert.ok(seen >= 2, `these files do state the size of the practise set and this check must read it (read ${seen})`);
 });
 
 test('the page says ONE word for a box and ONE word for a picture', () => {
