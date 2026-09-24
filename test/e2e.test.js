@@ -56,6 +56,19 @@ after(async () => {
  * aborting logs a console error and this suite asserts there are none; the request is still
  * recorded either way, and nothing leaves the machine.
  */
+/**
+ * 🔴 WAIT FOR THE BAR BEFORE MEASURING OR CLICKING IT — a race, not a defect (standard part 6f).
+ *
+ * The bar is revealed by `consent.js` after the document is parsed, and this suite runs straight
+ * after a build. Measured 24 September 2026: in the deploy's own run `#consentDecline` was not in
+ * the DOM yet when a test reached for it, Playwright's locator timed out, and the deploy stopped on
+ * a page that was correct — while the same suite passed 10/10 standalone. So the four tests that
+ * need the bar ask for it, and the tests that assert it is HIDDEN deliberately do not.
+ */
+async function waitForBar(page) {
+  await page.waitForSelector('#consentBar:not([hidden])', { timeout: 30000 });
+}
+
 async function openPage(options = {}) {
   const { consent, path = '/' } = options;
   const context = await browser.newContext();
@@ -127,6 +140,7 @@ test('the page loads clean, with the title that IS the host', async () => {
 
 test('before an answer: no request to Google at all, and no way to send one', async () => {
   const { context, page, requests } = await openPage();
+  await waitForBar(page);
   assert.ok(await page.isVisible('#consentBar'), 'the question must be asked');
   assert.equal(await page.evaluate(() => typeof window.gtag), 'undefined', 'gtag must not exist without consent');
   assert.deepEqual(toGoogle(requests), [], 'nothing may be requested from Google before a visitor chooses');
@@ -135,6 +149,7 @@ test('before an answer: no request to Google at all, and no way to send one', as
 
 test('the two answers are the same size and the same weight', async () => {
   const { context, page } = await openPage();
+  await waitForBar(page);
   const accept = await page.locator('#consentAccept').boundingBox();
   const decline = await page.locator('#consentDecline').boundingBox();
   assert.ok(Math.abs(accept.width - decline.width) <= 1, 'the answers must be the same width');
@@ -156,6 +171,7 @@ test('the two answers are the same size and the same weight', async () => {
 
 test('accepting loads the tag, counts the landing once, and releases the page', async () => {
   const { context, page, requests } = await openPage();
+  await waitForBar(page);
   await page.click('#consentAccept');
   await page.waitForFunction(() => typeof window.gtag === 'function');
   await page.waitForTimeout(400);
@@ -175,6 +191,7 @@ test('accepting loads the tag, counts the landing once, and releases the page', 
 
 test('refusing sends NOTHING to Google, and is not asked again', async () => {
   const { context, page, requests } = await openPage();
+  await waitForBar(page);
   await page.click('#consentDecline');
   await page.waitForTimeout(400);
 
