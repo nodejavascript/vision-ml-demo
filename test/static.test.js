@@ -192,8 +192,22 @@ test('the header carries the brand and nothing else, and the brand goes to THIS 
   assert.equal(header.match(/<a class="brand" href="([^"]+)"/)[1], '/', 'the brand goes to self, not to the parent');
   assert.match(header, /<b>vision-ml-demo<\/b>/);
   assert.match(header, /<small>nodejavascript\.com<\/small>/);
-  // The bar carries the FAMILY's mark (five circles); the favicon is the site's own.
-  assert.equal((header.match(/<circle /g) ?? []).length, 5, 'the bar shows the family mark');
+  // 🔴 PART 15c — THE BAR DRAWS THIS SITE'S OWN MARK, AND THAT MARK IS THE FAVICON (24 September
+  // 2026). *Prior assertion, preserved and now dead:* it required **five** `<circle>`s — the shared
+  // family mark — which is the FAULT the rule names: part 15b gives every app its own icon while the
+  // bar was drawing the family's. The drawing in the bar is the drawing in `site/favicon.svg`, less
+  // its full-bleed background plate — a tab needs an opaque ground, and a dark bar must not paint a
+  // second dark square on itself.
+  const shapes = (svg) =>
+    (svg.match(/<rect\b[^>]*>/g) ?? [])
+      .filter((r) => !/\bwidth="3[0-9]"/.test(r)) // the 32×32 plate is the favicon's ground
+      .map((r) => r.replace(/\s+/g, '').replace('/>', '>'))
+      .sort();
+  assert.deepEqual(
+    shapes(header.match(/<svg[\s\S]*?<\/svg>/)[0]),
+    shapes(read('favicon.svg')),
+    'the bar draws the favicon’s own mark, not the family circles'
+  );
 });
 
 test('the footer is brand · links · copyright, with the mother-site link exactly once', () => {
