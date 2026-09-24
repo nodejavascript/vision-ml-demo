@@ -62,7 +62,11 @@ const browser = await chromium.launch({ channel: 'chrome' });
 const pageErrors = [];
 
 async function visit(label, { click, seed, query = '' } = {}) {
-  const context = await browser.newContext();
+  // 🔴 THE OWNER'S NETWORK IS SERVED A STUB `/consent.js` (the `no-ga-for-me` rule on dvs-sites),
+  // and this live check runs from inside that range — so the bar never appears, the click times
+  // out, and the gate fails on a site that is correct. Measured 24 September 2026 on the fourth
+  // site in one day. The header only un-suppresses a file every other visitor already gets.
+  const context = await browser.newContext({ extraHTTPHeaders: { 'X-Nodejs-Audit': '1' } });
   if (seed) {
     await context.addInitScript((value) => {
       try {
