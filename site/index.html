@@ -67,7 +67,7 @@
                 "name": "Are my pictures uploaded?",
                 "acceptedAnswer": {
                   "@type": "Answer",
-                  "text": "No. Every picture is read on your own machine. There is no server behind this page, no request in the code that could carry a picture, and the whole demo works with the network disconnected."
+                  "text": "No. Every picture is read on your own machine. Nothing is uploaded, there is no server that keeps your pictures, no request in the model code could carry a picture, and the whole demo works with the network disconnected."
                 }
               },
               {
@@ -290,14 +290,20 @@
       <section class="card" id="privacy">
         <h2>Privacy</h2>
         <p>
-          Every picture you show it is read on your own machine. There is no server behind this page, nothing is
-          uploaded, and no request in the model code could carry a picture anywhere — the whole demo works with the
+          Every picture you show it is read on your own machine. Nothing is uploaded, there is no server that keeps your pictures, and no request in the model code could carry a picture anywhere — the whole demo works with the
           network switched off. <b>That is true whatever you answer about cookies.</b>
         </p>
         <p>
           What it learns is kept in this browser's own storage, so closing the tab and coming back picks up where you
           left off, and <b>Forget everything</b> erases it. Saving its memory downloads a file to your machine; loading
           one back is a file you chose. Nothing about you is stored here and there are no accounts.
+        </p>
+        <p>
+          One thing does leave the page, and none of it is yours: if the page throws a JavaScript
+          error, the error is reported to this site's own address so it can be fixed — the browser,
+          the page, the message and the line it came from. Never a picture, never anything you
+          type, and not even your own address: the report is relayed by our own server, so what
+          reaches the error tracker comes from that server and not from you.
         </p>
         <h3 id="cookies">Cookies</h3>
         <p>
@@ -403,5 +409,5 @@
       </p>
       <p class="footer-copy">© 2026 vision-ml-demo.nodejavascript.com. All rights reserved.</p>
     </footer>
-  </body>
+  <script src="/rollbar.js" defer></script></body>
 </html>
